@@ -1,0 +1,36 @@
+---
+title: 闭包：让函数记住状态
+description: 通过一个可交互的小实验理解闭包如何保留词法环境。
+type: note
+tags: [JavaScript, 函数]
+order: 1
+---
+
+# 闭包：让函数记住状态
+
+闭包可以理解为“函数和它创建时能访问到的变量共同组成的环境”。即使外层函数已经执行完，内部函数仍然可以读取和更新这些变量。
+
+<Alert severity="info"><AlertTitle>学习提示</AlertTitle>先拖动下面的计数器，再回到代码中观察 `count` 为什么没有丢失。</Alert>
+
+<Demo name="closure-counter" title="闭包计数器" />
+
+## 一个最小例子
+
+```js
+function createCounter() {
+  let count = 0;
+  return () => ++count;
+}
+
+const next = createCounter();
+next(); // 1
+next(); // 2
+```
+
+## 关键结论
+
+- `count` 是 `createCounter` 的局部变量。
+- 返回的函数携带了对 `count` 的引用。
+- 每次调用都会在同一个词法环境中更新状态。
+
+<Alert severity="success"><AlertTitle>记忆方法</AlertTitle>把闭包想成一个函数随身携带的小背包：背包里装着它创建时需要的变量。</Alert>

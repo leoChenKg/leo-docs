@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-label="闭包示意图">
+  <rect width="960" height="360" rx="24" fill="#eef2ff"/>
+  <rect x="60" y="70" width="280" height="220" rx="20" fill="#fff" stroke="#635bff" stroke-width="4"/>
+  <text x="90" y="125" fill="#17171c" font-size="24" font-family="Arial">createCounter()</text>
+  <text x="90" y="175" fill="#635bff" font-size="22" font-family="monospace">count = 0</text>
+  <path d="M380 180h190" stroke="#635bff" stroke-width="6" stroke-linecap="round"/><path d="m540 150 32 30-32 30" fill="none" stroke="#635bff" stroke-width="6"/>
+  <rect x="620" y="70" width="280" height="220" rx="20" fill="#fff" stroke="#635bff" stroke-width="4"/>
+  <text x="650" y="125" fill="#17171c" font-size="24" font-family="Arial">next()</text>
+  <text x="650" y="175" fill="#635bff" font-size="22" font-family="monospace">count += 1</text>
+  <text x="650" y="225" fill="#4a4a55" font-size="18" font-family="Arial">保留词法环境</text>
+</svg>

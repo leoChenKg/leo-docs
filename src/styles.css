@@ -1,0 +1,55 @@
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #fff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.doc-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.doc-content img,
+.doc-content video,
+.doc-content audio,
+.doc-content iframe {
+  max-width: 100%;
+}
+
+.doc-content .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+
+@media (max-width: 899px) {
+  .doc-content pre {
+    margin-inline: -4px;
+    border-radius: 6px;
+  }
+}
