@@ -1,19 +1,26 @@
-:root {
-  color-scheme: light;
-}
-
 html {
   scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background: #fff;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  max-width: 100%;
 }
 
 button,
@@ -23,24 +30,24 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
-.doc-content {
+.rich-content {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.doc-content pre {
+.rich-content pre {
   max-width: 100%;
   overflow-x: auto;
 }
 
-.doc-content img,
-.doc-content video,
-.doc-content audio,
-.doc-content iframe {
+.rich-content img,
+.rich-content video,
+.rich-content audio,
+.rich-content iframe {
   max-width: 100%;
 }
 
-.doc-content .katex-display {
+.rich-content .katex-display {
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
@@ -48,8 +55,26 @@ select {
 }
 
 @media (max-width: 899px) {
-  .doc-content pre {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-width: 0;
+  }
+
+  .rich-content {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .rich-content pre {
     margin-inline: -4px;
     border-radius: 6px;
+    max-width: calc(100% + 8px);
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
   }
 }

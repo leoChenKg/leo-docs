@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   AppBar,
+  Alert,
   Box,
   Breadcrumbs,
   Button,
@@ -9,53 +10,56 @@ import {
   CardContent,
   Chip,
   Container,
+  Collapse,
   CssBaseline,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   Drawer,
-  FormControl,
   IconButton,
   InputAdornment,
-  InputLabel,
   Link as MuiLink,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Menu,
   MenuItem,
-  Select,
   Stack,
   TextField,
   ThemeProvider,
   Toolbar,
   Tooltip,
   Typography,
-  createTheme,
-  responsiveFontSizes,
   useMediaQuery,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   ArticleOutlined,
   ArrowBack,
   ArrowForward,
-  Brightness4,
-  Brightness7,
-  Code,
-  FolderOutlined,
-  HomeOutlined,
-  Menu as MenuIcon,
-  Search,
+  DarkModeOutlined,
+  FolderRounded,
+  HomeRounded,
+  KeyboardArrowDownRounded,
+  KeyboardArrowRightRounded,
+  LightModeOutlined,
+  MenuBookOutlined,
+  MenuRounded,
+  LocalOfferRounded,
+  SearchRounded,
   SearchOff,
-  SpaceBar,
-  Close,
+  CloseRounded,
+  UpdateRounded,
 } from '@mui/icons-material';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { spaces } from './generated/content';
 import type { ContentEntry, Space } from './types';
+import { searchUrl } from './search';
 import { ContentRenderer } from './components/ContentRenderer';
+import { SearchDialog, SearchPage } from './components/Search';
+import { BookmarkButton, BookmarksLink, BookmarksPage } from './components/Bookmarks';
+import { findReadingMemory } from './reading-memory/model';
+import { useReadingMemory } from './reading-memory/store';
+import { createDocsTheme } from './theme';
 import './styles.css';
 
 type ColorMode = 'light' | 'dark' | 'system';
@@ -69,8 +73,11 @@ type Directory = {
   children: Map<string, Directory>;
 };
 
-const drawerWidth = 280;
+const drawerWidth = 300;
 const appBarHeight = 64;
+// Keep the fixed app bar and the navigation drawer below the device safe area.
+// `env(...)` resolves to 0 on desktop, so this does not change the desktop layout.
+const appBarOffset = `calc(${appBarHeight}px + env(safe-area-inset-top))`;
 const asSpaces = spaces as unknown as Space[];
 
 function visibleSpaces() {
@@ -95,6 +102,21 @@ function prettySegment(value: string) {
   return value.replace(/^\d+[-_]/, '').replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatDate(value?: string) {
+  if (!value) return '';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date).replaceAll('/', '-');
+}
+
+function directoryRouteFor(space: Space, parts: readonly string[]) {
+  const key = parts.join('/');
+  const index = space.entries.find((entry) => entry.kind === 'index' && entry.dirParts.join('/') === key);
+  if (index) return index.route;
+  const routeParts = parts.map((part) => part.toLowerCase().replace(/^\d+[-_]/, '').replace(/[^\p{Letter}\p{Number}_-]+/gu, '-').replace(/^-+|-+$/g, '')).filter(Boolean);
+  return `/spaces/${space.slug}/${routeParts.join('/')}`;
+}
+
 function buildDirectoryTree(space: Space): Directory {
   const root: Directory = { name: space.title, route: `/spaces/${space.slug}`, docs: [], children: new Map() };
   for (const entry of space.entries.filter((item) => !item.draft)) {
@@ -105,7 +127,7 @@ function buildDirectoryTree(space: Space): Directory {
     const parts = [...entry.dirParts];
     let node = root;
     parts.forEach((part, index) => {
-      const route = `/spaces/${space.slug}/${parts.slice(0, index + 1).join('/')}`;
+      const route = directoryRouteFor(space, parts.slice(0, index + 1));
       if (!node.children.has(part)) node.children.set(part, { name: part, route, docs: [], children: new Map() });
       node = node.children.get(part)!;
     });
@@ -119,54 +141,124 @@ function sortedDocs(directory: Directory) {
   return [...directory.docs].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, 'zh-CN'));
 }
 
-function NavigationTree({ directory, activePath, close }: { directory: Directory; activePath: string; close: () => void }) {
-  const children = [...directory.children.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+function directoryHasItems(directory: Directory) {
+  return directory.children.size > 0 || directory.docs.length > 0;
+}
+
+function directoryId(route: string) {
+  return `directory-${route.replace(/[^a-z\d_-]+/gi, '-')}`;
+}
+
+const navigationItemSx = {
+  minHeight: 44, width: '100%', px: 1.25, borderRadius: 1,
+  textAlign: 'left', color: 'text.secondary',
+  transition: 'background-color 150ms ease, color 150ms ease',
+  '& .MuiListItemIcon-root, & .MuiListItemText-primary': { color: 'inherit' },
+  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+  '&.Mui-selected, &.Mui-selected:hover': {
+    color: 'primary.main', bgcolor: 'action.selected',
+    borderLeft: '3px solid', borderLeftColor: 'primary.main', pl: 'calc(10px - 3px)',
+    '& .MuiListItemText-primary': { fontWeight: 700 },
+  },
+};
+
+function NavigationTree({ directory, activePath, close, expanded, toggle }: { directory: Directory; activePath: string; close: () => void; expanded: Set<string>; toggle: (route: string) => void }) {
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const children = [...directory.children.values()].sort((a, b) => {
+    const orderA = a.index?.order ?? Number.MAX_SAFE_INTEGER;
+    const orderB = b.index?.order ?? Number.MAX_SAFE_INTEGER;
+    return orderA - orderB || a.name.localeCompare(b.name, 'zh-CN');
+  });
   return (
     <List disablePadding>
-      {directory.index && directory.index.body && directory.route !== directory.index.route && (
-        <ListItemButton component={Link} to={directory.index.route} selected={activePath === directory.index.route} onClick={close} sx={{ minHeight: 42, pl: 2, borderRadius: 1 }}>
-          <ListItemIcon sx={{ minWidth: 32 }}><FolderOutlined fontSize="small" /></ListItemIcon>
-          <ListItemText primary={directory.index.title} primaryTypographyProps={{ variant: 'body2', noWrap: true }} />
-        </ListItemButton>
-      )}
-      {children.map((child) => (
-        <Box key={child.route}>
-          <ListItemButton component={Link} to={child.route} selected={activePath === child.route} onClick={close} sx={{ minHeight: 42, pl: 2, borderRadius: 1 }}>
-            <ListItemIcon sx={{ minWidth: 32 }}><FolderOutlined fontSize="small" /></ListItemIcon>
-            <ListItemText primary={child.index?.title ?? prettySegment(child.name)} primaryTypographyProps={{ variant: 'body2', noWrap: true }} />
+      {children.map((child) => {
+        const title = child.index?.title ?? prettySegment(child.name);
+        const hasItems = directoryHasItems(child);
+        const open = expanded.has(child.route);
+        return <Box component="li" key={child.route} sx={{ listStyle: 'none' }}>
+          <ListItemButton
+            component={Link}
+            to={child.route}
+            selected={activePath === child.route}
+            aria-current={activePath === child.route ? 'page' : undefined}
+            aria-expanded={hasItems ? open : undefined}
+            aria-controls={hasItems ? directoryId(child.route) : undefined}
+            title={title}
+            onClick={() => { if (hasItems) toggle(child.route); close(); }}
+            onKeyDown={(event) => {
+              if (hasItems && ((event.key === 'ArrowRight' && !open) || (event.key === 'ArrowLeft' && open))) {
+                event.preventDefault(); toggle(child.route);
+              }
+            }}
+            sx={{ ...navigationItemSx, minWidth: 0 }}
+          >
+            <ListItemIcon sx={{ minWidth: 26 }}><FolderRounded sx={{ fontSize: 18 }} /></ListItemIcon>
+            <ListItemText primary={title} primaryTypographyProps={{ variant: 'body2', noWrap: true }} />
+            {hasItems && <KeyboardArrowRightRounded sx={{ flexShrink: 0, ml: 0.5, fontSize: 20, color: open ? 'primary.main' : 'text.secondary', transform: open ? 'rotate(90deg)' : 'none', transition: reduceMotion ? 'none' : 'transform 220ms ease' }} />}
           </ListItemButton>
-          {(activePath === child.route || activePath.startsWith(`${child.route}/`)) && <Box sx={{ pl: 2 }}><NavigationTree directory={child} activePath={activePath} close={close} /></Box>}
-        </Box>
-      ))}
+          {hasItems && <Collapse in={open} timeout={reduceMotion ? 0 : 220} unmountOnExit>
+            <Box id={directoryId(child.route)} sx={{ pl: 2 }}><NavigationTree directory={child} activePath={activePath} close={close} expanded={expanded} toggle={toggle} /></Box>
+          </Collapse>}
+        </Box>;
+      })}
       {sortedDocs(directory).map((entry) => (
-        <ListItemButton component={Link} to={entry.route} selected={activePath === entry.route} onClick={close} key={entry.route} sx={{ minHeight: 42, pl: 2, borderRadius: 1 }}>
-          <ListItemIcon sx={{ minWidth: 32 }}><ArticleOutlined fontSize="small" /></ListItemIcon>
-          <ListItemText primary={entry.title} primaryTypographyProps={{ variant: 'body2', noWrap: true }} />
-        </ListItemButton>
+        <Box component="li" key={entry.route} sx={{ listStyle: 'none' }}>
+          <ListItemButton component={Link} to={entry.route} title={entry.title} selected={activePath === entry.route} aria-current={activePath === entry.route ? 'page' : undefined} onClick={close} sx={navigationItemSx}>
+            <ListItemIcon sx={{ minWidth: 26 }}><ArticleOutlined sx={{ fontSize: 18 }} /></ListItemIcon>
+            <ListItemText primary={entry.title} primaryTypographyProps={{ variant: 'body2', noWrap: true }} />
+          </ListItemButton>
+        </Box>
       ))}
     </List>
   );
 }
 
-function SpaceNavigation({ space, activePath, close, onSpaceChange }: { space: Space; activePath: string; close: () => void; onSpaceChange: (slug: string) => void }) {
+function SpaceNavigation({ space, activePath, close, temporary }: { space: Space; activePath: string; close: () => void; temporary: boolean }) {
   const tree = useMemo(() => buildDirectoryTree(space), [space]);
+  const routeAncestors = useMemo(() => {
+    const routes = new Set<string>();
+    const pathParts = activePath.split('/');
+    for (let index = 1; index <= pathParts.length; index += 1) {
+      const route = pathParts.slice(0, index).join('/');
+      if (route.startsWith(`/spaces/${space.slug}/`)) routes.add(route);
+    }
+    return routes;
+  }, [activePath, space.slug]);
+  const initialExpanded = useMemo(() => new Set(routeAncestors), [routeAncestors]);
+  const [expanded, setExpanded] = useState<Set<string>>(initialExpanded);
+  const lastActivePath = useRef(activePath);
+  const pendingToggle = useRef<{ route: string; open: boolean } | null>(null);
+  useEffect(() => {
+    if (lastActivePath.current === activePath) return;
+    lastActivePath.current = activePath;
+    const intent = pendingToggle.current;
+    pendingToggle.current = null;
+    setExpanded((current) => {
+      const next = new Set([...current, ...routeAncestors]);
+      // Navigating to a directory overview changes the active path. Preserve
+      // an explicit collapse instead of immediately re-expanding its ancestors.
+      if (intent && !intent.open) next.delete(intent.route);
+      return next;
+    });
+  }, [activePath, routeAncestors]);
+  const toggle = (route: string) => {
+    const open = !expanded.has(route);
+    pendingToggle.current = { route, open };
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (open) next.add(route); else next.delete(route);
+      return next;
+    });
+  };
   return (
-    <Box component="nav" aria-label={`${space.title} 文档导航`} sx={{ px: 1.5, py: 1.5 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5, px: 0.5 }}>
-        <FormControl size="small" fullWidth>
-          <InputLabel id="drawer-space-label">文档空间</InputLabel>
-          <Select labelId="drawer-space-label" label="文档空间" value={space.slug} onChange={(event) => onSpaceChange(event.target.value)}>
-            {visibleSpaces().map((option) => <MenuItem value={option.slug} key={option.slug}>{option.title}</MenuItem>)}
-          </Select>
-        </FormControl>
-        <IconButton aria-label="关闭导航" onClick={close} sx={{ display: { md: 'none' }, minWidth: 44, minHeight: 44 }}><Close /></IconButton>
-      </Stack>
-      <ListItemButton component={Link} to={`/spaces/${space.slug}`} selected={activePath === `/spaces/${space.slug}`} onClick={close} sx={{ minHeight: 44, borderRadius: 1, mb: 1 }}>
-        <ListItemIcon sx={{ minWidth: 32 }}><HomeOutlined fontSize="small" /></ListItemIcon>
+    <Box component="nav" aria-label={`${space.title} 文档导航`} sx={{ px: 2, py: 2 }}>
+      {temporary && <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}><IconButton aria-label="关闭导航" onClick={close} sx={{ minWidth: 44, minHeight: 44 }}><CloseRounded /></IconButton></Box>}
+      <ListItemButton component={Link} to={`/spaces/${space.slug}`} selected={activePath === `/spaces/${space.slug}`} aria-current={activePath === `/spaces/${space.slug}` ? 'page' : undefined} onClick={close} sx={{ ...navigationItemSx, mb: 2 }}>
+        <ListItemIcon sx={{ minWidth: 26, color: 'inherit' }}><HomeRounded sx={{ fontSize: 19 }} /></ListItemIcon>
         <ListItemText primary="概览" primaryTypographyProps={{ fontWeight: 650 }} />
       </ListItemButton>
-      <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, letterSpacing: 1.1 }}>文档目录</Typography>
-      <NavigationTree directory={tree} activePath={activePath} close={close} />
+      <Typography variant="overline" color="text.secondary" sx={{ px: 1.25, letterSpacing: 1.1, display: 'block', mb: 1, fontSize: 11 }}>文档目录</Typography>
+      <NavigationTree directory={tree} activePath={activePath} close={close} expanded={expanded} toggle={toggle} />
     </Box>
   );
 }
@@ -174,21 +266,70 @@ function SpaceNavigation({ space, activePath, close, onSpaceChange }: { space: S
 function normalizeBreadcrumbs(entry: ContentEntry, space: Space): Breadcrumb[] {
   const fromEntry = (entry as ContentEntry & { breadcrumbs?: Breadcrumb[] }).breadcrumbs;
   if (Array.isArray(fromEntry) && fromEntry.length > 0) return [{ title: space.title, route: `/spaces/${space.slug}` }, ...fromEntry];
-  return [{ title: space.title, route: `/spaces/${space.slug}` }, ...entry.dirParts.map((part, index) => ({ title: prettySegment(part), route: `/spaces/${space.slug}/${entry.dirParts.slice(0, index + 1).join('/')}` }))];
+  const directories = entry.dirParts.map((part, index) => {
+    const parts = entry.dirParts.slice(0, index + 1);
+    const directory = space.entries.find((candidate) => candidate.kind === 'index' && candidate.dirParts.join('/') === parts.join('/'));
+    return { title: directory?.title ?? prettySegment(part), route: directory?.route ?? directoryRouteFor(space, parts) };
+  });
+  return [{ title: space.title, route: `/spaces/${space.slug}` }, ...directories];
 }
 
 function OnThisPage({ entry }: { entry?: ContentEntry }) {
-  if (!entry?.headings?.length) return null;
+  const headings = useMemo(() => entry?.headings?.filter((heading) => heading.depth > 1) ?? [], [entry?.headings]);
+  const [activeId, setActiveId] = useState(() => {
+    const hash = window.location.hash.slice(1);
+    try { return decodeURIComponent(hash); } catch { return hash; }
+  });
+  useEffect(() => {
+    if (!headings.length) return undefined;
+    let observer: IntersectionObserver | undefined;
+    let retryTimer: number | undefined;
+    let attempts = 0;
+    const hash = window.location.hash.slice(1);
+    let hashId = hash;
+    try { hashId = decodeURIComponent(hash); } catch { /* keep the raw hash when it is malformed */ }
+    setActiveId(headings.some((heading) => heading.id === hashId) ? hashId : headings[0].id);
+    const connect = () => {
+      const elements = headings.map((heading) => document.getElementById(heading.id)).filter((element): element is HTMLElement => Boolean(element));
+      if (!elements.length) {
+        if (attempts < 30) {
+          attempts += 1;
+          retryTimer = window.setTimeout(connect, 120);
+        }
+        return;
+      }
+      observer = new IntersectionObserver((entries) => {
+        const visible = entries.filter((item) => item.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]?.target instanceof HTMLElement) setActiveId(visible[0].target.id);
+      }, { rootMargin: '-96px 0px -62% 0px', threshold: [0, 1] });
+      elements.forEach((element) => observer?.observe(element));
+    };
+    connect();
+    return () => {
+      if (retryTimer) window.clearTimeout(retryTimer);
+      observer?.disconnect();
+    };
+  }, [entry?.route, headings]);
+  const selectHeading = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
+    event.preventDefault();
+    setActiveId(id);
+    const element = document.getElementById(id);
+    element?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${encodeURIComponent(id)}`);
+  };
+  if (!headings.length) return null;
   return (
-    <Box component="aside" sx={{ width: 220, flexShrink: 0, display: { xs: 'none', lg: 'block' }, position: 'sticky', top: 96, alignSelf: 'flex-start' }}>
-      <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1 }}>本页目录</Typography>
-      <List dense disablePadding sx={{ mt: 1, borderLeft: 1, borderColor: 'divider' }}>
-        {entry.headings.filter((heading) => heading.depth > 1).map((heading) => (
-          <ListItemButton component="a" href={`#${heading.id}`} key={heading.id} sx={{ py: 0.45, pl: 1.5 + Math.max(0, heading.depth - 2) * 1.25, minHeight: 30 }}>
-            <ListItemText primary={heading.text} primaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }} />
-          </ListItemButton>
-        ))}
-      </List>
+    <Box component="aside" aria-label="本页目录" sx={{ width: { sm: 200, md: 220 }, flexShrink: 0, display: 'block', position: 'sticky', top: 96, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', scrollbarWidth: 'thin' }}>
+      <Box sx={{ pl: 2, borderLeft: 1, borderColor: 'divider' }}>
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1.1, fontSize: 11 }}>本页目录</Typography>
+        <List dense disablePadding sx={{ mt: 1 }}>
+          {headings.map((heading) => (
+            <ListItemButton component="a" href={`#${heading.id}`} key={heading.id} onClick={(event) => selectHeading(event, heading.id)} aria-current={activeId === heading.id ? 'location' : undefined} sx={{ py: 0.4, pl: 1.25, pr: 0.75, minHeight: 36, borderRadius: 0.75, borderLeft: '3px solid transparent', color: 'text.secondary', transition: 'background-color 150ms ease, color 150ms ease, border-color 150ms ease', '& .MuiListItemText-primary': { color: 'inherit' }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, ...(activeId === heading.id ? { color: 'primary.main', bgcolor: 'action.selected', borderLeftColor: 'transparent', '& .MuiListItemText-primary': { color: 'primary.main', fontWeight: 700 } } : {}) }}>
+              <ListItemText primary={heading.text} primaryTypographyProps={{ variant: 'caption' }} sx={{ pl: Math.max(0, heading.depth - 2) * 1.5 }} />
+            </ListItemButton>
+          ))}
+        </List>
+      </Box>
     </Box>
   );
 }
@@ -196,8 +337,8 @@ function OnThisPage({ entry }: { entry?: ContentEntry }) {
 function EntryBreadcrumbs({ entry, space }: { entry: ContentEntry; space: Space }) {
   const crumbs = normalizeBreadcrumbs(entry, space);
   return (
-    <Breadcrumbs aria-label="面包屑导航" sx={{ mb: 2 }}>
-      {crumbs.map((crumb, index) => index < crumbs.length - 1 && crumb.route ? <MuiLink component={Link} to={crumb.route} underline="hover" color="inherit" key={`${crumb.route}-${crumb.title}`}>{crumb.title}</MuiLink> : <Typography color="text.primary" key={crumb.title}>{crumb.title}</Typography>)}
+    <Breadcrumbs aria-label="面包屑导航" sx={{ mb: { xs: 1.5, sm: 2 }, maxWidth: '100%', overflowWrap: 'anywhere', '& .MuiBreadcrumbs-ol': { flexWrap: 'wrap', rowGap: 0.25 } }}>
+      {crumbs.map((crumb) => crumb.route && crumb.route !== entry.route ? <MuiLink component={Link} to={crumb.route} underline="hover" color="inherit" key={`${crumb.route}-${crumb.title}`}>{crumb.title}</MuiLink> : <Typography color="text.primary" aria-current="page" key={crumb.title}>{crumb.title}</Typography>)}
     </Breadcrumbs>
   );
 }
@@ -216,7 +357,7 @@ function DirectoryCards({ space, directoryRoute, currentEntry }: { space: Space;
     <Box sx={{ mt: 5 }}>
       <Typography variant="h5" sx={{ fontWeight: 700, mb: 2 }}>本目录</Typography>
       <Stack spacing={1.25}>
-        {unique.map((entry) => <Card variant="outlined" key={entry.route}><CardActionArea component={Link} to={entry.route} sx={{ minHeight: 64 }}><CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}><Typography variant="subtitle1" fontWeight={650}>{entry.title}</Typography>{entry.description && <Typography variant="body2" color="text.secondary" noWrap>{entry.description}</Typography>}</CardContent></CardActionArea></Card>)}
+        {unique.map((entry) => <Card variant="outlined" key={entry.route}><CardActionArea component={Link} to={entry.route} sx={{ minHeight: 64 }}><CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}><Typography variant="subtitle1" fontWeight={650} sx={{ overflowWrap: 'anywhere' }}>{entry.title}</Typography>{entry.description && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{entry.description}</Typography>}</CardContent></CardActionArea></Card>)}
       </Stack>
     </Box>
   );
@@ -229,23 +370,42 @@ function PrevNext({ space, entry }: { space: Space; entry: ContentEntry }) {
   const previous = position > 0 ? entries[position - 1] : undefined;
   const next = position >= 0 && position < entries.length - 1 ? entries[position + 1] : undefined;
   if (!previous && !next) return null;
-  return <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mt: 6, pt: 2, borderTop: 1, borderColor: 'divider' }}><Box>{previous && <Button component={Link} to={previous.route} startIcon={<ArrowBack />} sx={{ textAlign: 'left', justifyContent: 'flex-start', minHeight: 44 }}><Box><Typography variant="caption" display="block" color="text.secondary">上一篇</Typography><Typography variant="body2">{previous.title}</Typography></Box></Button>}</Box><Box>{next && <Button component={Link} to={next.route} endIcon={<ArrowForward />} sx={{ textAlign: 'right', justifyContent: 'flex-end', minHeight: 44 }}><Box><Typography variant="caption" display="block" color="text.secondary">下一篇</Typography><Typography variant="body2">{next.title}</Typography></Box></Button>}</Box></Stack>;
+  return <Box component="nav" aria-label="相邻文章" sx={{ mt: 'auto', pt: 6, borderTop: 1, borderColor: 'divider', display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+    {previous && <Button component={Link} to={previous.route} startIcon={<ArrowBack />} sx={{ textAlign: 'left', justifyContent: 'flex-start', minHeight: 52, minWidth: 0 }}><Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}><Typography variant="caption" display="block" color="text.secondary">上一篇</Typography><Typography variant="body2">{previous.title}</Typography></Box></Button>}
+    {next && <Button component={Link} to={next.route} endIcon={<ArrowForward />} sx={{ gridColumn: { sm: 2 }, textAlign: 'right', justifyContent: 'flex-end', minHeight: 52, minWidth: 0 }}><Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}><Typography variant="caption" display="block" color="text.secondary">下一篇</Typography><Typography variant="body2">{next.title}</Typography></Box></Button>}
+  </Box>;
 }
 
 function DocPage({ entry, space }: { entry: ContentEntry; space: Space }) {
   const isDirectoryIndex = entry.kind === 'index';
   const directoryRoute = entry.directoryRoute ?? entry.route;
+  const tags = (entry.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+  const updatedAt = entry.updatedAt || entry.date;
   return <>
     <EntryBreadcrumbs entry={entry} space={space} />
-    <Typography component="h1" variant="h3" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>{entry.title}</Typography>
-    {entry.description && <Typography variant="h6" color="text.secondary" sx={{ mt: 1, lineHeight: 1.6, fontWeight: 400 }}>{entry.description}</Typography>}
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 2, mb: 3 }}>
-      {entry.type !== 'doc' && <Chip size="small" label={entry.type} />}
-      {(entry.updatedAt || entry.date) && <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>更新于 {entry.updatedAt || entry.date}</Typography>}
-      {entry.tags?.map((tag) => <Chip size="small" variant="outlined" label={tag} key={tag} />)}
-    </Stack>
-    <Divider sx={{ mb: 3 }} />
-    {entry.body ? <ContentRenderer entry={{ ...entry, body: withoutPageTitle(entry) }} /> : <Typography color="text.secondary">这个目录还没有说明文档。</Typography>}
+    <Typography component="h1" variant="h3" sx={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>{entry.title}</Typography>
+    {entry.description && <Typography variant="h6" component="p" color="text.secondary" sx={{ mt: { xs: 0.75, sm: 1 }, fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.6, fontWeight: 400, overflowWrap: 'anywhere' }}>{entry.description}</Typography>}
+    {(tags.length > 0 || Boolean(updatedAt) || Boolean(entry.sourcePath)) && <Box aria-label="文章信息" sx={{ mt: { xs: 2, sm: 2.5 }, mb: { xs: 2.5, sm: 3 } }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 1.25, sm: 2 }} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+        {tags.length > 0 && <Stack direction="row" spacing={0.9} useFlexGap flexWrap="wrap" alignItems="center" sx={{ minWidth: 0 }}>
+          <LocalOfferRounded color="primary" sx={{ fontSize: 20, flexShrink: 0 }} />
+          {tags.map((tag, index) => <Stack direction="row" spacing={0.9} alignItems="center" key={tag}>
+            {index > 0 && <Typography color="text.disabled" aria-hidden="true">·</Typography>}
+            <MuiLink component={Link} to={searchUrl({ query: '', space: '', tag, type: '', sort: 'relevance' })} underline="hover" color="primary" variant="body2" fontWeight={650}>{tag}</MuiLink>
+          </Stack>)}
+        </Stack>}
+        <Box sx={{ flex: 1, display: { xs: 'none', sm: 'block' } }} />
+        <BookmarkButton entry={entry} space={space} />
+      </Stack>
+      {updatedAt && <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 1.5, color: 'text.secondary' }}>
+        <UpdateRounded sx={{ fontSize: 18 }} />
+        <Typography variant="caption">最后更新于 {formatDate(updatedAt)}</Typography>
+      </Stack>}
+    </Box>}
+    <Divider sx={{ mb: { xs: 2.5, sm: 3 } }} />
+    {entry.body ? <ContentRenderer entry={{ ...entry, body: withoutPageTitle(entry) }} /> : entry.kind === 'index' ? <Alert severity="info" icon={<ArticleOutlined />} sx={{ mt: 1 }}>
+      这个目录目前还没有说明文档。可以在 <Box component="code" sx={{ fontFamily: 'monospace' }}>{entry.dirParts.length ? `spaces/${space.slug}/${entry.dirParts.join('/')}/_index.md` : `spaces/${space.slug}/_index.md`}</Box> 创建或编辑目录总览，作为该模块的统一说明。
+    </Alert> : <Typography color="text.secondary">这个目录还没有说明文档。</Typography>}
     {isDirectoryIndex && <DirectoryCards space={space} directoryRoute={directoryRoute} currentEntry={entry} />}
     <PrevNext space={space} entry={entry} />
   </>;
@@ -255,95 +415,250 @@ function SpaceHome({ space }: { space: Space }) {
   const index = space.entries.find((entry) => entry.kind === 'index' && entry.route === `/spaces/${space.slug}`);
   const docs = space.entries.filter((entry) => !entry.draft && entry.kind !== 'index').sort((a, b) => (b.updatedAt || b.date || '').localeCompare(a.updatedAt || a.date || '')).slice(0, 8);
   return <>
-    <Breadcrumbs sx={{ mb: 2 }}><Typography color="text.secondary">文档空间</Typography><Typography color="text.primary">{space.title}</Typography></Breadcrumbs>
-    <Stack direction="row" spacing={1} alignItems="center"><SpaceBar color="primary" /><Typography component="h1" variant="h3" sx={{ fontWeight: 800 }}>{space.title}</Typography></Stack>
-    {space.description && <Typography variant="h6" color="text.secondary" sx={{ mt: 1, fontWeight: 400 }}>{space.description}</Typography>}
-    {index?.body && <><Divider sx={{ my: 4 }} /><ContentRenderer entry={{ ...index, body: withoutPageTitle(index) }} /></>}
-    <Typography variant="h5" sx={{ mt: 5, mb: 2, fontWeight: 700 }}>最近文档</Typography>
-    <Stack spacing={1.25}>{docs.map((entry) => <Card variant="outlined" key={entry.route}><CardActionArea component={Link} to={entry.route} sx={{ minHeight: 76 }}><CardContent sx={{ py: 1.75, '&:last-child': { pb: 1.75 } }}><Stack direction="row" justifyContent="space-between" spacing={2}><Typography variant="h6" fontWeight={650}>{entry.title}</Typography>{(entry.updatedAt || entry.date) && <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{entry.updatedAt || entry.date}</Typography>}</Stack><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{entry.description}</Typography></CardContent></CardActionArea></Card>)}{docs.length === 0 && <Typography color="text.secondary">这个空间还没有文档。</Typography>}</Stack>
+    <Breadcrumbs sx={{ mb: { xs: 1.5, sm: 2 }, '& .MuiBreadcrumbs-ol': { flexWrap: 'wrap' } }}><Typography color="text.secondary">文档空间</Typography><Typography color="text.primary" sx={{ overflowWrap: 'anywhere' }}>{space.title}</Typography></Breadcrumbs>
+    <Stack direction="row" spacing={{ xs: 0.75, sm: 1 }} alignItems="center"><MenuBookOutlined color="primary" sx={{ fontSize: { xs: 28, sm: 32 }, flexShrink: 0 }} /><Typography component="h1" variant="h3" sx={{ fontWeight: 800, fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>{space.title}</Typography></Stack>
+    {space.description && <Typography variant="h6" component="p" color="text.secondary" sx={{ mt: { xs: 0.75, sm: 1 }, fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.6, fontWeight: 400, overflowWrap: 'anywhere' }}>{space.description}</Typography>}
+    {index?.body && <><Divider sx={{ my: { xs: 3, sm: 4 } }} /><ContentRenderer entry={{ ...index, body: withoutPageTitle(index) }} /></>}
+    <Typography variant="h5" component="h2" sx={{ mt: { xs: 4, sm: 5 }, mb: 2, fontWeight: 700, fontSize: { xs: '1.5rem', sm: '1.75rem' } }}>最近文档</Typography>
+    <Stack spacing={1.25}>{docs.map((entry) => <Card variant="outlined" key={entry.route}><CardActionArea component={Link} to={entry.route} sx={{ minHeight: 76 }}><CardContent sx={{ py: 1.75, '&:last-child': { pb: 1.75 } }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={{ xs: 0.5, sm: 2 }}><Typography variant="h6" component="h3" fontWeight={650} sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{entry.title}</Typography>{(entry.updatedAt || entry.date) && <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{formatDate(entry.updatedAt || entry.date)}</Typography>}</Stack><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{entry.description}</Typography></CardContent></CardActionArea></Card>)}{docs.length === 0 && <Typography color="text.secondary">这个空间还没有文档。</Typography>}</Stack>
   </>;
 }
 
 function SpacesHome() {
-  const navigate = useNavigate();
   return <>
-    <Typography component="h1" variant="h3" sx={{ fontWeight: 800 }}>学习文档空间</Typography>
-    <Typography variant="h6" color="text.secondary" sx={{ mt: 1, mb: 4, fontWeight: 400 }}>从一个空间开始阅读、整理和沉淀。</Typography>
-    {visibleSpaces().length === 0 ? <Box sx={{ py: 8, textAlign: 'center' }}><SearchOff color="disabled" sx={{ fontSize: 48 }} /><Typography sx={{ mt: 1 }} color="text.secondary">还没有可展示的文档空间。</Typography></Box> : <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>{visibleSpaces().map((space) => { const docs = space.entries.filter((entry) => !entry.draft && entry.kind !== 'index'); const recent = docs.slice().sort((a, b) => (b.updatedAt || b.date || '').localeCompare(a.updatedAt || a.date || ''))[0]; return <Card variant="outlined" key={space.slug}><CardActionArea onClick={() => navigate(`/spaces/${space.slug}`)} sx={{ height: '100%', minHeight: 150 }}><CardContent sx={{ p: 2.5 }}><Stack direction="row" spacing={1.5} alignItems="flex-start"><Code color="primary" /><Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="h6" fontWeight={700}>{space.title}</Typography><Typography color="text.secondary" sx={{ mt: 0.5 }}>{space.description}</Typography><Stack direction="row" spacing={1} sx={{ mt: 2 }}><Chip size="small" label={`${docs.length} 篇文档`} />{recent && <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>最近更新 {recent.updatedAt || recent.date}</Typography>}</Stack></Box></Stack></CardContent></CardActionArea></Card>; })}</Box>}
+    <Typography component="h1" variant="h3" sx={{ fontWeight: 800, fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>学习文档空间</Typography>
+    <Typography variant="h6" component="p" color="text.secondary" sx={{ mt: { xs: 0.75, sm: 1 }, mb: { xs: 3, sm: 4 }, fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.6, fontWeight: 400 }}>从一个空间开始阅读、整理和沉淀。</Typography>
+    {visibleSpaces().length === 0 ? <Box sx={{ py: 8, textAlign: 'center' }}><SearchOff color="disabled" sx={{ fontSize: 48 }} /><Typography sx={{ mt: 1 }} color="text.secondary">还没有可展示的文档空间。</Typography></Box> : <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>{visibleSpaces().map((space) => { const docs = space.entries.filter((entry) => !entry.draft && entry.kind !== 'index'); const recent = docs.slice().sort((a, b) => (b.updatedAt || b.date || '').localeCompare(a.updatedAt || a.date || ''))[0]; return <Card variant="outlined" key={space.slug}><CardActionArea component={Link} to={`/spaces/${space.slug}`} sx={{ height: '100%', minHeight: 150, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start' }}><CardContent sx={{ p: 2.5, width: '100%', height: '100%' }}><Box sx={{ minWidth: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}><Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}><MenuBookOutlined color="primary" sx={{ flexShrink: 0 }} /><Typography variant="h6" component="h2" fontWeight={700} sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{space.title}</Typography></Box><Typography color="text.secondary" sx={{ mt: 0.5 }}>{space.description}</Typography><Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 'auto', pt: 2 }}><Chip size="small" label={`${docs.length} 篇文档`} />{recent && <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>最近更新 {formatDate(recent.updatedAt || recent.date)}</Typography>}</Stack></Box></CardContent></CardActionArea></Card>; })}</Box>}
   </>;
 }
 
-function SearchDialog({ open, initialQuery, currentSpace, onClose }: { open: boolean; initialQuery: string; currentSpace?: Space; onClose: () => void }) {
-  const navigate = useNavigate();
-  const [query, setQuery] = useState(initialQuery);
-  const [scope, setScope] = useState(currentSpace?.slug ?? 'all');
-  useEffect(() => { if (open) { setQuery(initialQuery); setScope(currentSpace?.slug ?? 'all'); } }, [open, initialQuery, currentSpace?.slug]);
-  const submit = () => { const value = query.trim(); if (!value) return; navigate(`/search?q=${encodeURIComponent(value)}${scope === 'all' ? '' : `&space=${scope}`}`); onClose(); };
-  return <Dialog fullWidth maxWidth="sm" open={open} onClose={onClose} fullScreen={false}><DialogTitle>搜索文档</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField autoFocus fullWidth value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit(); }} placeholder="输入关键词" InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} /><FormControl fullWidth><InputLabel id="search-scope-label">搜索范围</InputLabel><Select labelId="search-scope-label" label="搜索范围" value={scope} onChange={(event) => setScope(event.target.value)}><MenuItem value="all">所有空间</MenuItem>{visibleSpaces().map((space) => <MenuItem key={space.slug} value={space.slug}>{space.title}</MenuItem>)}</Select></FormControl></Stack></DialogContent><DialogActions><Button onClick={onClose}>取消</Button><Button variant="contained" onClick={submit}>搜索</Button></DialogActions></Dialog>;
-}
-
-function SearchPage() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const params = new URLSearchParams(location.search);
-  const query = params.get('q')?.trim() ?? '';
-  const selected = params.get('space');
-  const scope = selected ? visibleSpaces().filter((space) => space.slug === selected) : visibleSpaces();
-  const [scopeValue, setScopeValue] = useState(selected ?? 'all');
-  const results = scope.flatMap((space) => space.entries.filter((entry) => !entry.draft && `${entry.title} ${entry.description} ${entry.body} ${(entry.tags ?? []).join(' ')}`.toLowerCase().includes(query.toLowerCase())).map((entry) => ({ space, entry })));
+function HeaderSpacePicker({ space, onChange }: { space: Space; onChange: (slug: string) => void }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return <>
-    <Breadcrumbs sx={{ mb: 2 }}><Typography color="text.secondary">搜索</Typography></Breadcrumbs>
-    <Typography component="h1" variant="h3" sx={{ fontWeight: 800 }}>搜索结果</Typography>
-    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2, mb: 3 }}><TextField fullWidth value={query} onChange={(event) => navigate(`/search?q=${encodeURIComponent(event.target.value)}${scopeValue === 'all' ? '' : `&space=${scopeValue}`}`)} placeholder="输入关键词" size="small" /><FormControl size="small" sx={{ minWidth: { sm: 180 } }}><InputLabel id="page-scope-label">范围</InputLabel><Select labelId="page-scope-label" label="范围" value={scopeValue} onChange={(event) => { setScopeValue(event.target.value); navigate(`/search?q=${encodeURIComponent(query)}${event.target.value === 'all' ? '' : `&space=${event.target.value}`}`); }}><MenuItem value="all">所有空间</MenuItem>{visibleSpaces().map((space) => <MenuItem key={space.slug} value={space.slug}>{space.title}</MenuItem>)}</Select></FormControl></Stack>
-    <Typography color="text.secondary" sx={{ mb: 2 }}>{query ? `“${query}”找到 ${results.length} 条结果` : '输入关键词搜索文档'}</Typography>
-    <Stack spacing={1.25}>{results.map(({ space, entry }) => <Card variant="outlined" key={`${space.slug}:${entry.route}`}><CardActionArea component={Link} to={entry.route} sx={{ minHeight: 74 }}><CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}><Stack direction="row" spacing={1} alignItems="center"><Chip size="small" label={space.title} /><Typography variant="h6" fontWeight={650}>{entry.title}</Typography></Stack><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{entry.description}</Typography></CardContent></CardActionArea></Card>)}{query && !results.length && <Typography color="text.secondary">没有匹配的文档。</Typography>}</Stack>
+    <Button aria-label={`切换文档空间：${space.title}`} aria-haspopup="menu" aria-expanded={Boolean(anchor)} onClick={(event) => setAnchor(event.currentTarget)} endIcon={<KeyboardArrowDownRounded />} sx={{ minWidth: 0, width: 156, flexShrink: 0, justifyContent: 'space-between', px: 1.25, py: 0.75, bgcolor: 'action.hover', color: 'text.primary', borderRadius: 1, '&:hover': { bgcolor: 'action.selected' } }}>
+      <Typography component="span" variant="body2" fontWeight={700} noWrap sx={{ minWidth: 0 }}>{space.title}</Typography>
+    </Button>
+    <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+      {visibleSpaces().map((option) => <MenuItem selected={option.slug === space.slug} key={option.slug} onClick={() => { onChange(option.slug); setAnchor(null); }}>{option.title}</MenuItem>)}
+    </Menu>
   </>;
 }
 
 function AppShell({ children, currentSpace, activePath, mode, setMode }: { children: ReactNode; currentSpace?: Space; activePath: string; mode: ColorMode; setMode: (mode: ColorMode) => void }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const resolvedMode = mode === 'system' ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : mode;
-  let theme = createTheme({ palette: { mode: resolvedMode, primary: { main: resolvedMode === 'dark' ? '#90caf9' : '#007fff' } }, shape: { borderRadius: 8 }, typography: { fontFamily: '"Inter", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' } });
-  theme = responsiveFontSizes(theme);
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
+  const resolvedMode = mode === 'system' ? (prefersDark ? 'dark' : 'light') : mode;
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedMode;
+  }, [resolvedMode]);
+  const theme = useMemo(() => createDocsTheme(resolvedMode), [resolvedMode]);
+  const hideNavigation = useMediaQuery('(max-width:1199px)');
+  // On narrower screens hide the left navigation first. Keep the article TOC
+  // available on small tablets, then remove it only when the content column
+  // can no longer accommodate it.
+  const hideToc = useMediaQuery('(max-width:767px)');
+  const showDesktopSearch = useMediaQuery('(min-width:900px)');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const query = new URLSearchParams(location.search).get('q') ?? '';
   const closeDrawer = () => setDrawerOpen(false);
-  const navigateSpace = (slug: string) => { navigate(`/spaces/${slug}`); closeDrawer(); };
-  return <ThemeProvider theme={theme}><CssBaseline />
-    <AppBar position="fixed" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', zIndex: (value) => value.zIndex.drawer + 1 }}>
-      <Toolbar sx={{ minHeight: `${appBarHeight}px !important`, gap: 1 }}>
-        {isMobile && <IconButton edge="start" onClick={() => setDrawerOpen(true)} aria-label="打开导航" sx={{ minWidth: 44, minHeight: 44 }}><MenuIcon /></IconButton>}
-        <MuiLink component={Link} to="/" underline="none" color="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: { xs: 0, sm: 2 } }}><Code color="primary" /><Typography variant="h6" fontWeight={800}>Leo Learn</Typography></MuiLink>
-        {currentSpace && <FormControl size="small" sx={{ minWidth: 190, display: { xs: 'none', md: 'block' } }}><InputLabel id="top-space-label">文档空间</InputLabel><Select labelId="top-space-label" label="文档空间" value={currentSpace.slug} onChange={(event) => navigateSpace(event.target.value)}>{visibleSpaces().map((space) => <MenuItem value={space.slug} key={space.slug}>{space.title}</MenuItem>)}</Select></FormControl>}
+  const navigateSpace = (slug: string) => { navigate('/spaces/' + slug); closeDrawer(); };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  return <ThemeProvider theme={theme}><CssBaseline enableColorScheme />
+    <AppBar position="fixed" color="inherit" elevation={0} sx={{ pt: 'env(safe-area-inset-top)', borderBottom: 1, borderColor: 'divider', bgcolor: alpha(theme.palette.background.default, 0.6), backdropFilter: 'blur(8px)', color: resolvedMode === 'dark' ? 'grey.500' : 'grey.800', zIndex: (value) => value.zIndex.drawer + 1 }}>
+      <Toolbar sx={{ minHeight: appBarHeight + 'px !important', gap: { xs: 0.25, sm: 1.25 }, px: 0, pl: { xs: 'max(8px, env(safe-area-inset-left))', sm: 2.5 }, pr: { xs: 'max(8px, env(safe-area-inset-right))', sm: 2.5 } }}>
+        {hideNavigation && currentSpace && <IconButton onClick={() => setDrawerOpen(true)} aria-label="打开导航" sx={{ minWidth: 44, minHeight: 44 }}><MenuRounded /></IconButton>}
+        <MuiLink component={Link} to="/" underline="none" color="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mr: { xs: 0, md: 1.5 }, flexShrink: 0 }}><MenuBookOutlined color="primary" sx={{ fontSize: 28 }} /><Typography variant="h6" fontWeight={700}>文档</Typography></MuiLink>
+        <Divider orientation="vertical" flexItem sx={{ height: 28, alignSelf: 'center', borderColor: 'divider', display: { xs: 'none', sm: 'block' } }} />
+        {currentSpace && <Box sx={{ display: { xs: 'none', sm: 'block' } }}><HeaderSpacePicker space={currentSpace} onChange={navigateSpace} /></Box>}
         <Box sx={{ flex: 1 }} />
-        <Tooltip title="搜索"><IconButton onClick={() => setSearchOpen(true)} aria-label="搜索文档" sx={{ minWidth: 44, minHeight: 44, display: { xs: 'inline-flex', md: 'none' } }}><Search /></IconButton></Tooltip>
-        <TextField value={query} onClick={() => setSearchOpen(true)} placeholder="搜索文档" size="small" sx={{ width: 240, display: { xs: 'none', md: 'flex' } }} InputProps={{ readOnly: true, startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }} />
-        <Tooltip title="切换主题"><IconButton onClick={() => setMode(resolvedMode === 'light' ? 'dark' : 'light')} aria-label="切换主题" sx={{ minWidth: 44, minHeight: 44 }}>{resolvedMode === 'light' ? <Brightness4 /> : <Brightness7 />}</IconButton></Tooltip>
+        <Tooltip title="搜索"><IconButton onClick={() => setSearchOpen(true)} aria-label="搜索文档" sx={{ minWidth: 44, minHeight: 44, display: showDesktopSearch ? 'none' : 'inline-flex' }}><SearchRounded /></IconButton></Tooltip>
+        <TextField hiddenLabel variant="filled" value={query} onClick={() => setSearchOpen(true)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSearchOpen(true); } }} placeholder="搜索文档..." size="small" aria-label="搜索文档" sx={{ width: { sm: 260, md: 420, lg: 500 }, flexShrink: 1, display: showDesktopSearch ? 'flex' : 'none', '& .MuiFilledInput-root': { height: 40, bgcolor: 'action.hover', borderRadius: 1, px: 1.5 }, '& .MuiFilledInput-root:hover': { bgcolor: 'action.selected' }, '& .MuiFilledInput-root.Mui-focused': { bgcolor: 'action.selected' } }} InputProps={{ disableUnderline: true, readOnly: true, startAdornment: <InputAdornment position="start"><SearchRounded fontSize="small" /></InputAdornment>, endAdornment: <InputAdornment position="end"><Typography variant="caption" color="text.secondary">⌘ K</Typography></InputAdornment> }} />
+        <BookmarksLink />
+        <Tooltip title="切换主题"><IconButton onClick={() => setMode(resolvedMode === 'light' ? 'dark' : 'light')} aria-label="切换主题" sx={{ minWidth: 44, minHeight: 44 }}>{resolvedMode === 'light' ? <DarkModeOutlined /> : <LightModeOutlined />}</IconButton></Tooltip>
       </Toolbar>
     </AppBar>
-    {currentSpace && <Drawer variant={isMobile ? 'temporary' : 'permanent'} open={isMobile ? drawerOpen : true} onClose={closeDrawer} ModalProps={{ keepMounted: true }} sx={{ '& .MuiDrawer-paper': { width: drawerWidth, boxSizing: 'border-box', top: `${appBarHeight}px`, height: `calc(100% - ${appBarHeight}px)`, borderRight: 1, borderColor: 'divider' } }}><SpaceNavigation space={currentSpace} activePath={activePath} close={closeDrawer} onSpaceChange={navigateSpace} /></Drawer>}
-    <Box component="main" sx={{ ml: currentSpace && !isMobile ? `${drawerWidth}px` : 0, pt: `${appBarHeight}px`, minHeight: '100vh' }}><Container maxWidth="xl" sx={{ py: { xs: 3, sm: 5 }, px: { xs: 2, sm: 4 } }}><Box sx={{ display: 'flex', gap: { lg: 5 }, alignItems: 'flex-start' }}><Box sx={{ width: '100%', maxWidth: 760, minWidth: 0 }}>{children}</Box>{currentSpace && activePath !== '/search' && <OnThisPage entry={entryForPath(currentSpace, activePath)} />}</Box></Container></Box>
+    {currentSpace && <Drawer variant={hideNavigation ? 'temporary' : 'permanent'} open={hideNavigation ? drawerOpen : true} onClose={closeDrawer} ModalProps={{ keepMounted: true }} sx={{ '& .MuiDrawer-paper': { width: { xs: 'min(88vw, 320px)', sm: drawerWidth }, boxSizing: 'border-box', top: appBarOffset, height: `calc(100% - ${appBarOffset})`, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', pb: 'env(safe-area-inset-bottom)', borderRight: 1, borderColor: 'divider', bgcolor: 'background.default' } }}><SpaceNavigation space={currentSpace} activePath={activePath} close={closeDrawer} temporary={hideNavigation} /></Drawer>}
+    <Box component="main" sx={{ ml: currentSpace && !hideNavigation ? drawerWidth + 'px' : 0, pt: appBarOffset, minHeight: '100vh', minWidth: 0, overflowX: 'clip' }}><Container maxWidth={false} sx={{ maxWidth: 1320, minHeight: `calc(100vh - ${appBarOffset})`, display: 'flex', flexDirection: 'column', py: { xs: 2.5, sm: 4.5 }, pb: { xs: 'max(20px, env(safe-area-inset-bottom))', sm: 3 }, px: 0, pl: { xs: 'max(16px, env(safe-area-inset-left))', sm: 4, lg: 5 }, pr: { xs: 'max(16px, env(safe-area-inset-right))', sm: 4, lg: 5 } }}><Box sx={{ display: 'flex', flex: '1 1 auto', minHeight: 0, gap: { sm: 3, md: 5 }, alignItems: 'stretch' }}><Box sx={{ width: '100%', maxWidth: 760, minWidth: 0, flex: '1 1 760px', display: 'flex', flexDirection: 'column' }}>{children}</Box>{currentSpace && activePath !== '/search' && !hideToc && <OnThisPage entry={entryForPath(currentSpace, activePath)} />}</Box></Container></Box>
     <SearchDialog open={searchOpen} initialQuery={query} currentSpace={currentSpace} onClose={() => setSearchOpen(false)} />
   </ThemeProvider>;
+}
+
+function useArticleReadingMemory(entry: ContentEntry | undefined, routeHash: string) {
+  const { memories, save } = useReadingMemory();
+  const memoriesRef = useRef(memories);
+  const saveRef = useRef(save);
+  useEffect(() => { memoriesRef.current = memories; }, [memories]);
+  useEffect(() => { saveRef.current = save; }, [save]);
+
+  useEffect(() => {
+    if (!entry?.sourcePath || entry.draft || typeof window === 'undefined') return undefined;
+    const memory = findReadingMemory(memoriesRef.current, entry);
+    let restoring = Boolean(memory && !routeHash);
+    let interacted = false;
+    let saveTimer: number | undefined;
+    let restoreTimer: number | undefined;
+    let restoreFrame: number | undefined;
+    let attempts = 0;
+    let previousHeight = -1;
+    let stableFrames = 0;
+
+    const savePosition = () => {
+      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const scrollTop = Math.max(0, Math.min(window.scrollY, maxScroll));
+      saveRef.current(entry, {
+        scrollTop,
+        scrollRatio: maxScroll > 0 ? scrollTop / maxScroll : 0,
+        // Keep hash changes made with history.replaceState on the same page,
+        // while avoiding a destination hash during Link-navigation cleanup.
+        hash: window.location.pathname === entry.route ? window.location.hash : routeHash,
+      });
+    };
+    const scheduleSave = () => {
+      if (restoring) return;
+      if (saveTimer) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(savePosition, 180);
+    };
+    const persistOnExit = () => {
+      // A browser can reset scrollY to 0 before pagehide/visibilitychange
+      // during a reload. Keep the last useful position unless the reader
+      // interacted with the current page at the top.
+      if (interacted || window.scrollY > 0) savePosition();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistOnExit();
+      else scheduleSave();
+    };
+    const cancelRestore = () => {
+      if (!restoring) return;
+      restoring = false;
+      if (restoreTimer) window.clearTimeout(restoreTimer);
+    };
+    const handleInteraction = () => {
+      interacted = true;
+      cancelRestore();
+    };
+    const restorePosition = () => {
+      if (!restoring || !memory) return;
+      const height = document.documentElement.scrollHeight;
+      const maxScroll = Math.max(0, height - window.innerHeight);
+      let memoryHeading: HTMLElement | null = null;
+      if (memory.hash) {
+        let headingId = memory.hash;
+        try { headingId = decodeURIComponent(headingId); } catch { /* use the stored id when it is not encoded */ }
+        memoryHeading = document.getElementById(headingId);
+      }
+      if (memoryHeading) memoryHeading.scrollIntoView({ behavior: 'auto', block: 'start' });
+      else {
+        const ratioTarget = memory.scrollRatio * maxScroll;
+        const target = Math.max(0, Math.min(maxScroll, ratioTarget || memory.scrollTop));
+        window.scrollTo({ top: target, behavior: 'auto' });
+      }
+      attempts += 1;
+      if (height === previousHeight) stableFrames += 1;
+      else stableFrames = 0;
+      previousHeight = height;
+      // MDX pages render through a lazy module. Do not conclude that the
+      // document is stable while the fallback spinner is still the only
+      // content, otherwise restoration would stop at scrollTop 0.
+      const contentReady = entry.sourcePath.endsWith('.mdx')
+        ? Boolean(document.querySelector('.mdx-content'))
+        : Boolean(document.querySelector('.rich-content'));
+      if (attempts >= 40 || (contentReady && stableFrames >= 2)) {
+        restoring = false;
+        return;
+      }
+      restoreTimer = window.setTimeout(restorePosition, 100);
+    };
+
+    window.addEventListener('scroll', scheduleSave, { passive: true });
+    window.addEventListener('pagehide', persistOnExit);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (memory && !routeHash) {
+      window.addEventListener('wheel', handleInteraction, { passive: true });
+      window.addEventListener('touchstart', handleInteraction, { passive: true });
+      window.addEventListener('pointerdown', handleInteraction, { passive: true });
+      window.addEventListener('keydown', handleInteraction);
+      restoreFrame = window.requestAnimationFrame(restorePosition);
+    } else if (!routeHash) {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+    return () => {
+      if (saveTimer) window.clearTimeout(saveTimer);
+      if (restoreTimer) window.clearTimeout(restoreTimer);
+      if (restoreFrame) window.cancelAnimationFrame(restoreFrame);
+      window.removeEventListener('scroll', scheduleSave);
+      window.removeEventListener('pagehide', persistOnExit);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('wheel', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+      window.removeEventListener('pointerdown', handleInteraction);
+      window.removeEventListener('keydown', handleInteraction);
+      if (interacted || !memory) savePosition();
+    };
+  }, [entry?.route, entry?.sourcePath, entry?.spaceSlug, entry?.draft, routeHash]);
 }
 
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [mode, setModeState] = useState<ColorMode>(() => (localStorage.getItem('leo-learn-mode') as ColorMode | null) ?? 'system');
-  const setMode = (next: ColorMode) => { setModeState(next); localStorage.setItem('leo-learn-mode', next); };
+  const [mode, setModeState] = useState<ColorMode>(() => {
+    try { return (localStorage.getItem('leo-learn-mode') as ColorMode | null) ?? 'dark'; }
+    catch { return 'dark'; }
+  });
+  const setMode = (next: ColorMode) => {
+    setModeState(next);
+    try { localStorage.setItem('leo-learn-mode', next); } catch { /* Reading remains available when browser storage is blocked. */ }
+  };
   const normalized = cleanTrailingSlash(location.pathname);
-  useEffect(() => { if (normalized !== location.pathname) navigate(`${normalized}${location.search}${location.hash}`, { replace: true }); }, [normalized, location.pathname, location.search, location.hash, navigate]);
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }); document.title = location.pathname === '/' ? 'Leo Learn' : `${entryForPath(currentSpaceFor(location.pathname), normalized)?.title ?? 'Leo Learn'} · Leo Learn`; }, [location.pathname, normalized]);
-  useEffect(() => { if (location.hash) requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView()); }, [location.hash, location.pathname]);
   const currentSpace = currentSpaceFor(normalized);
   const entry = entryForPath(currentSpace, normalized);
+  useArticleReadingMemory(entry, location.hash);
+  useEffect(() => { if (normalized !== location.pathname) navigate(`${normalized}${location.search}${location.hash}`, { replace: true }); }, [normalized, location.pathname, location.search, location.hash, navigate]);
+  useEffect(() => { document.title = location.pathname === '/' ? 'Leo Learn' : `${normalized === '/bookmarks' ? '我的收藏' : entryForPath(currentSpaceFor(location.pathname), normalized)?.title ?? 'Leo Learn'} · Leo Learn`; }, [location.pathname, normalized]);
+  useEffect(() => {
+    if (!entry && !location.hash) window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [entry, location.hash, location.pathname]);
+  useEffect(() => {
+    if (!location.hash) return;
+    let id = location.hash.slice(1);
+    try { id = decodeURIComponent(id); } catch { /* keep the raw hash when it is malformed */ }
+    let cancelled = false;
+    let attempts = 0;
+    let retryTimer: number | undefined;
+    const scrollToHash = () => {
+      if (cancelled) return;
+      const target = document.getElementById(id);
+      if (target) {
+        target.scrollIntoView({ block: 'start' });
+        return;
+      }
+      if (attempts < 30) {
+        attempts += 1;
+        retryTimer = window.setTimeout(scrollToHash, 100);
+      }
+    };
+    const frame = requestAnimationFrame(scrollToHash);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [location.hash, location.pathname]);
   let content: ReactNode;
   if (normalized === '/') content = <SpacesHome />;
   else if (normalized === '/search') content = <SearchPage />;
+  else if (normalized === '/bookmarks') content = <BookmarksPage spaces={asSpaces} />;
   else if (!currentSpace) content = <NotFound />;
   else if (normalized === `/spaces/${currentSpace.slug}`) content = <SpaceHome space={currentSpace} />;
   else if (entry) content = <DocPage entry={entry} space={currentSpace} />;
@@ -352,6 +667,5 @@ export default function App() {
 }
 
 function NotFound({ space }: { space?: Space }) {
-  const navigate = useNavigate();
   return <Box sx={{ py: 8, textAlign: 'center' }}><SearchOff color="disabled" sx={{ fontSize: 52 }} /><Typography variant="h4" sx={{ mt: 1, fontWeight: 750 }}>页面不存在</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>请从文档目录选择一个页面。</Typography><Button component={Link} to={space ? `/spaces/${space.slug}` : '/'} sx={{ mt: 2 }}>返回首页</Button></Box>;
 }

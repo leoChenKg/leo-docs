@@ -76,10 +76,10 @@ export function CodeBlock({ children, code, language = 'text', title }: { childr
     try { await navigator.clipboard.writeText(source); setMessage('代码已复制'); }
     catch { setMessage('复制失败，请手动选择代码复制'); }
   };
-  return <Paper variant="outlined" className="content-code" sx={{ my: 2, overflow: 'hidden' }}>
-    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5, py: 0.25, borderBottom: 1, borderColor: 'divider', bgcolor: 'action.hover' }}>
-      <Typography variant="caption" color="text.secondary" noWrap>{title ?? language}</Typography>
-      <Tooltip title="复制代码"><IconButton size="small" aria-label="复制代码" onClick={() => void copy()} sx={{ width: 44, height: 44 }}><ContentCopy fontSize="small" /></IconButton></Tooltip>
+  return <Paper variant="outlined" className="content-code" sx={{ my: 2, overflow: 'hidden', bgcolor: 'var(--docs-code-background)', color: 'hsl(60, 30%, 96%)', borderColor: 'hsl(210, 14%, 13%)', colorScheme: 'dark' }}>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5, py: 0.25, borderBottom: 1, borderColor: 'hsl(210, 14%, 13%)', bgcolor: 'var(--docs-code-title-background)', color: 'var(--docs-code-title-color)' }}>
+      <Typography variant="caption" color="inherit" noWrap sx={{ minWidth: 0 }}>{title ?? language}</Typography>
+      <Tooltip title="复制代码"><IconButton color="inherit" size="small" aria-label="复制代码" onClick={() => void copy()} sx={{ width: 44, height: 44, flexShrink: 0 }}><ContentCopy fontSize="small" /></IconButton></Tooltip>
     </Stack>
     <Box component="pre" sx={{ m: 0, p: 2, overflowX: 'auto', maxWidth: '100%', fontSize: '0.8125rem', lineHeight: 1.7 }} tabIndex={0} aria-label={`${language} 代码`}>
       {highlighted !== null ? <code className={`hljs language-${language}`} dangerouslySetInnerHTML={{ __html: highlighted }} /> : <code>{source}</code>}
@@ -90,16 +90,17 @@ export function CodeBlock({ children, code, language = 'text', title }: { childr
 
 export function Figure({ src, alt = '', caption, title }: { src: string; alt?: string; caption?: ReactNode; title?: string }) {
   const entry = useContext(EntryContext);
+  const titleId = useId();
   const [open, setOpen] = useState(false);
   const resolved = resolveHref(src, entry, true);
   return <Box component="figure" sx={{ mx: 0, my: 3, maxWidth: '100%' }}>
-    <ButtonBase onClick={() => setOpen(true)} aria-label={`放大图片：${alt || title || '文档图片'}`} sx={{ position: 'relative', width: '100%', display: 'block', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+    <ButtonBase className="content-figure-button" onClick={() => setOpen(true)} aria-label={`放大图片：${alt || title || '文档图片'}`} aria-haspopup="dialog" sx={{ position: 'relative', width: '100%', display: 'block', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
       <Box component="img" src={resolved} alt={alt} loading="lazy" sx={{ display: 'block', width: '100%', height: 'auto', maxHeight: 560, objectFit: 'contain' }} />
       <Box component="span" sx={{ position: 'absolute', right: 8, bottom: 8, bgcolor: 'background.paper', borderRadius: 1, p: 0.5, display: 'flex', boxShadow: 1 }}><OpenInFull fontSize="small" /></Box>
     </ButtonBase>
     {caption && <Typography component="figcaption" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>{caption}</Typography>}
-    <Dialog open={open} onClose={() => setOpen(false)} maxWidth="lg" fullWidth>
-      <DialogTitle sx={{ pr: 7 }}>{title || alt || '文档图片'}<IconButton onClick={() => setOpen(false)} aria-label="关闭图片" sx={{ position: 'absolute', right: 8, top: 8, width: 44, height: 44 }}><Close /></IconButton></DialogTitle>
+    <Dialog open={open} onClose={() => setOpen(false)} aria-labelledby={titleId} maxWidth="lg" fullWidth>
+      <DialogTitle id={titleId} sx={{ pr: 7 }}>{title || alt || '文档图片'}<IconButton onClick={() => setOpen(false)} aria-label="关闭图片" sx={{ position: 'absolute', right: 8, top: 8, width: 44, height: 44 }}><Close /></IconButton></DialogTitle>
       <DialogContent><Box component="img" src={resolved} alt={alt} sx={{ display: 'block', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', mx: 'auto' }} /></DialogContent>
     </Dialog>
   </Box>;
@@ -123,7 +124,7 @@ export function ReferenceList({ items }: { items: Array<{ title: string; url: st
 }
 
 export function GlossaryTerm({ children, definition }: { children: ReactNode; definition: string }) {
-  return <Tooltip title={definition} enterTouchDelay={0} leaveTouchDelay={4000} arrow><Box component="button" type="button" sx={{ cursor: 'help', font: 'inherit', color: 'inherit', p: 0, border: 0, bgcolor: 'transparent', borderBottom: '1px dotted', borderColor: 'primary.main' }}>{children}</Box></Tooltip>;
+  return <Tooltip title={definition} enterTouchDelay={0} leaveTouchDelay={4000} arrow><Box component="button" className="content-glossary-term" type="button" sx={{ cursor: 'help', font: 'inherit', color: 'inherit', p: 0, border: 0, bgcolor: 'transparent', borderBottom: '1px dotted', borderColor: 'primary.main' }}>{children}</Box></Tooltip>;
 }
 
 function SourceDetails({ source, language }: { source: string; language: string }) {
@@ -251,18 +252,18 @@ export function Demo({ name, title }: { name: string; title?: string }) {
   return <Paper variant="outlined" sx={{ my: 3, overflow: 'hidden' }}>
     {title && <Typography variant="subtitle2" sx={{ px: 2, pt: 2 }}>{title}</Typography>}
     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1, borderBottom: 1, borderColor: 'divider' }}>
-      <Tabs value={tab} onChange={(_, value: number) => setTab(value)} aria-label={`${title ?? name} 演示`} sx={{ minWidth: 0 }}>
+      <Tabs value={tab} onChange={(_, value: number) => setTab(value)} aria-label={`${title ?? name} 演示`} variant="scrollable" scrollButtons="auto" sx={{ minWidth: 0 }}>
         <Tab label="交互预览" id={`${id}-tab-0`} aria-controls={`${id}-panel-0`} />
         <Tab label="源码" id={`${id}-tab-1`} aria-controls={`${id}-panel-1`} />
       </Tabs>
-      <Tooltip title="重置演示"><IconButton aria-label="重置演示" onClick={() => setReset((value) => value + 1)} sx={{ width: 44, height: 44 }}><RestartAlt /></IconButton></Tooltip>
+      <Tooltip title={tab === 0 ? '重置演示' : '重置并返回预览'}><IconButton aria-label={tab === 0 ? '重置演示' : '重置并返回预览'} onClick={() => { setReset((value) => value + 1); setTab(0); }} sx={{ width: 44, height: 44, flexShrink: 0 }}><RestartAlt /></IconButton></Tooltip>
     </Stack>
-    <Box role="tabpanel" hidden={tab !== 0} id={`${id}-panel-0`} aria-labelledby={`${id}-tab-0`} sx={{ p: { xs: 2, sm: 3 } }}>
+    <Box role="tabpanel" hidden={tab !== 0} id={`${id}-panel-0`} aria-labelledby={`${id}-tab-0`} tabIndex={0} sx={{ p: { xs: 2, sm: 3 }, minWidth: 0, overflowX: 'auto' }}>
       <ContentBoundary key={`${demoKey}-${reset}`} fallback={<Alert severity="warning"><AlertTitle>演示暂时不可用</AlertTitle><Markdown content={fallback} /></Alert>}>
         <Suspense fallback={<Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={18} /><Typography variant="body2">正在加载演示…</Typography></Stack>}><DemoComponent /></Suspense>
       </ContentBoundary>
     </Box>
-    <Box role="tabpanel" hidden={tab !== 1} id={`${id}-panel-1`} aria-labelledby={`${id}-tab-1`} sx={{ px: 2 }}><CodeBlock language="tsx" code={source || '// 正在读取源码…'} /></Box>
+    <Box role="tabpanel" hidden={tab !== 1} id={`${id}-panel-1`} aria-labelledby={`${id}-tab-1`} tabIndex={0} sx={{ px: { xs: 1, sm: 2 }, minWidth: 0 }}><CodeBlock language="tsx" code={source || '// 正在读取源码…'} /></Box>
   </Paper>;
 }
 
@@ -290,7 +291,7 @@ const elements = {
   blockquote: ({ children }: { children?: ReactNode }) => <Box component="blockquote" sx={{ ml: 0, my: 2, pl: 2, borderLeft: 3, borderColor: 'primary.main', color: 'text.secondary' }}>{children}</Box>,
   pre: FencedCode,
   img: ({ src, alt, title }: { src?: string; alt?: string; title?: string }) => <Figure src={src ?? ''} alt={alt} caption={title} />,
-  table: ({ children }: { children?: ReactNode }) => <TableContainer component={Paper} variant="outlined" sx={{ my: 2, maxWidth: '100%' }} tabIndex={0}><Table size="small">{children}</Table></TableContainer>,
+  table: ({ children }: { children?: ReactNode }) => <TableContainer className="content-table" component={Paper} variant="outlined" sx={{ my: 2, maxWidth: '100%' }} tabIndex={0} role="region" aria-label="文档表格，可横向滚动"><Table size="small">{children}</Table></TableContainer>,
   thead: ({ children }: { children?: ReactNode }) => <TableHead sx={{ bgcolor: 'action.hover' }}>{children}</TableHead>,
   tbody: ({ children }: { children?: ReactNode }) => <TableBody>{children}</TableBody>,
   tr: ({ children }: { children?: ReactNode }) => <TableRow>{children}</TableRow>,
@@ -386,7 +387,7 @@ function SimpleChart({ chartType, title, data }: Extract<Block, { kind: 'chart' 
   return <Paper variant="outlined" sx={{ my: 3, p: { xs: 2, sm: 3 } }}>
     {title && <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>{title}</Typography>}
     <Stack spacing={1.25}>{data.map((item) => <Stack direction="row" spacing={1.5} alignItems="center" key={item.label}>
-      <Typography variant="body2" sx={{ width: { xs: 64, sm: 110 }, flexShrink: 0 }} noWrap>{item.label}</Typography>
+      <Typography variant="body2" sx={{ width: { xs: 64, sm: 110 }, flexShrink: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</Typography>
       <Box sx={{ flex: 1, height: 26, bgcolor: 'action.hover', borderRadius: 1, overflow: 'hidden' }}><Box sx={{ width: `${Math.max(3, Math.abs(item.value) / max * 100)}%`, height: '100%', bgcolor: chartType === 'line' ? 'secondary.main' : 'primary.main', borderRadius: 1 }} /></Box>
       <Typography variant="body2" sx={{ width: 40, textAlign: 'right' }}>{item.value}</Typography>
     </Stack>)}</Stack>

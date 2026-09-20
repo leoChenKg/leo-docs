@@ -1,27 +1,100 @@
-.rich-content { line-height: 1.85; overflow-wrap: anywhere; }
-.rich-content > :first-child { margin-top: 0; }
+.rich-content {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+.rich-content :is(h1, h2, h3, h4, h5, h6),
+.mdx-content :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 88px;
+}
+.rich-content > *, .mdx-content > * { min-width: 0; max-width: 100%; }
+.rich-content > :first-child, .mdx-content > :first-child, .mdx-content > h1:first-child + * { margin-top: 0; }
 .mdx-content > h1:first-child { display: none; }
 .rich-content ul, .rich-content ol { padding-left: 1.5rem; }
 .rich-content li { margin: .35rem 0; }
-.rich-content :not(pre) > code { padding: .15rem .3rem; border-radius: 4px; background: rgba(127, 127, 127, .12); font-size: .875em; overflow-wrap: anywhere; }
+.rich-content > p, .rich-content > ul, .rich-content > ol,
+.mdx-content > .content-paragraph, .mdx-content > ul, .mdx-content > ol { color: var(--docs-prose-color); }
+.rich-content :not(pre) > code { padding: .15rem .3rem; border: 1px solid var(--docs-inline-code-border); border-radius: 4px; background: var(--docs-inline-code-background); color: var(--docs-text-primary); font-size: .875em; overflow-wrap: anywhere; }
 .rich-content pre { overflow-wrap: normal; word-break: normal; }
 .rich-content code { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
 .rich-content .MuiAlert-message { min-width: 0; }
-.rich-content .MuiAlert-message > :first-child { margin-top: 0; }
+.rich-content .MuiAlert-message > :first-child:not(.MuiAlertTitle-root) { margin-top: 0; }
+.rich-content .MuiAlert-message .MuiTypography-body1:not(.MuiAlertTitle-root) { margin-top: 0; }
 .rich-content .MuiAlert-message > :last-child { margin-bottom: 0; }
-.rich-content .katex-display { overflow-x: auto; overflow-y: hidden; padding-block: .25rem; }
+.rich-content .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: .25rem;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.rich-content .katex-display > .katex { white-space: nowrap; }
 .rich-content .content-mermaid { min-width: 0; text-align: center; }
+.rich-content .content-mermaid { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .rich-content .content-mermaid svg { max-width: 100%; height: auto; }
-.rich-content .content-chart { width: 100%; min-width: 0; }
+.rich-content .content-chart { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .rich-content .content-chart.vega-embed { padding: 0; }
 .rich-content .content-chart svg { max-width: 100%; height: auto; }
-.content-code .hljs-keyword, .content-code .hljs-selector-tag, .content-code .hljs-literal { color: #a031cf; }
-.content-code .hljs-string, .content-code .hljs-regexp { color: #087e45; }
-.content-code .hljs-title, .content-code .hljs-built_in { color: #0069c2; }
-.content-code .hljs-number, .content-code .hljs-attr, .content-code .hljs-attribute { color: #ac5214; }
-.content-code .hljs-comment, .content-code .hljs-quote { color: #64748b; }
+.rich-content .content-code pre,
+.rich-content .content-table,
+.rich-content .content-chart,
+.rich-content .content-mermaid {
+  scrollbar-width: thin;
+}
+.rich-content .content-table { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.rich-content .content-table > table { width: max-content; min-width: 100%; }
+.rich-content .MuiTabs-root { min-width: 0; flex: 1 1 auto; }
+.rich-content [role="tabpanel"] { min-width: 0; max-width: 100%; }
+.rich-content .content-figure-button.Mui-focusVisible,
+.rich-content :is(pre[tabindex], .content-table[tabindex], [role="tabpanel"]):focus-visible { outline: 2px solid var(--docs-primary); outline-offset: -2px; }
+.rich-content .content-glossary-term:focus-visible { outline: 2px solid var(--docs-primary); outline-offset: 3px; border-radius: 2px; }
+.content-code .hljs-keyword { color: #66d9ef; }
+.content-code .hljs-string, .content-code .hljs-selector-tag, .content-code .hljs-built_in, .content-code .hljs-selector-attr, .content-code .hljs-selector-class, .content-code .hljs-selector-pseudo { color: #a6e22e; }
+.content-code .hljs-regexp { color: #fd971f; }
+.content-code .hljs-title, .content-code .hljs-title.function_, .content-code .hljs-title.class_, .content-code .hljs-section { color: #e6db74; }
+.content-code .hljs-number, .content-code .hljs-literal { color: #b78eff; }
+.content-code .hljs-comment, .content-code .hljs-quote { color: #b2b2b2; }
+.content-code .hljs-attribute, .content-code .hljs-attr, .content-code .hljs-name, .content-code .hljs-tag { color: #fc929e; }
+.content-code .hljs-punctuation, .content-code .hljs-operator, .content-code .hljs-variable, .content-code .hljs-subst { color: #f8f8f2; }
 @media (prefers-reduced-motion: reduce) { .rich-content * { scroll-behavior: auto !important; } }
 @media (max-width: 599px) {
-  .rich-content .MuiTab-root { padding-inline: 12px; min-width: 80px; }
-  .rich-content .MuiTableCell-root { padding: 10px; }
+  .rich-content {
+    font-size: 1rem;
+    line-height: 1.8;
+  }
+  .rich-content h1.MuiTypography-root {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    font-size: clamp(1.9rem, 8vw, 2.5rem);
+    line-height: 1.25;
+  }
+  .rich-content h2.MuiTypography-root {
+    line-height: 1.3;
+  }
+  .rich-content h3.MuiTypography-root,
+  .rich-content h4.MuiTypography-root {
+    line-height: 1.35;
+  }
+  .rich-content > .MuiTypography-body1,
+  .mdx-content > .content-paragraph {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    line-height: 1.8;
+  }
+  .rich-content .MuiTab-root { padding-inline: 12px; min-width: 76px; min-height: 44px; }
+  .rich-content .MuiIconButton-root { min-width: 44px; min-height: 44px; }
+  .rich-content .MuiAlert-root { align-items: flex-start; padding: 12px; }
+  .rich-content .MuiAlert-icon { margin-right: 8px; margin-top: 2px; }
+  .rich-content .MuiTableCell-root { padding: 9px 10px; }
+  .rich-content .content-mermaid { text-align: left; }
+  .rich-content .content-mermaid svg { max-width: none; }
+  .rich-content .content-code pre { padding: 12px; }
+  .rich-content .content-code code { font-size: .8125rem; }
+  .rich-content figure { margin-inline: 0; }
+  .rich-content img,
+  .rich-content video,
+  .rich-content iframe { display: block; height: auto; }
+  .rich-content audio { min-height: 44px; }
 }
