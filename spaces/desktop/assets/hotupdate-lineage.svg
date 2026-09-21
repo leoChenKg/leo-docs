@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="790" viewBox="0 0 960 790" role="img" aria-labelledby="title desc">
+  <title id="title">热更新的新旧版本与架构配对</title>
+  <desc id="desc">旧包来自 Mars 中已全量的版本记录，新包来自 Downton 中选中的发版记录。相同产品的 x64 旧包与 x64 新包配对，ARM64 旧包与 ARM64 新包配对，提交独立热更新任务生成 ZIP 并上传。随后还需在 Mars 中配置基准版本、热更新地址和状态，由客户端检查适用性。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="#5c6c80"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#18283c}
+      .heading{font-size:29px;font-weight:650}.label{font-size:22px;font-weight:600}.body{font-size:20px}.sub{font-size:18px;fill:#52637a}.arrow{fill:none;stroke:#5c6c80;stroke-width:2;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="960" height="790" rx="18" fill="#f6f8fc"/>
+  <text x="36" y="50" class="heading">热更新：必须同时知道“从哪里来”和“到哪里去”</text>
+  <text x="36" y="82" class="sub">原理示意 · A、B 是教学代号，不是一次真实构建的版本记录</text>
+  <rect x="36" y="115" width="412" height="130" rx="12" fill="#e8effb"/>
+  <text x="60" y="151" class="label">旧包 A：Mars 历史全量版本</text>
+  <text x="60" y="188" class="body">读取版本号、构建号、包地址</text>
+  <text x="60" y="220" class="sub">不是任意一个旧安装包</text>
+  <rect x="512" y="115" width="412" height="130" rx="12" fill="#e5f3ee"/>
+  <text x="536" y="151" class="label">新包 B：Downton 发版记录</text>
+  <text x="536" y="188" class="body">人工选定产品和待发布制品</text>
+  <text x="536" y="220" class="sub">记录本身不证明审核已经通过</text>
+  <path d="M242 245 V278 H410 V303" class="arrow"/>
+  <path d="M718 245 V278 H550 V303" class="arrow"/>
+  <rect x="160" y="308" width="640" height="107" rx="12" fill="#fff0d9"/>
+  <text x="480" y="343" text-anchor="middle" class="label">同一产品 ＋ 同一架构配对</text>
+  <text x="480" y="379" text-anchor="middle" class="body">A x64 → B x64　　A arm64 → B arm64</text>
+  <path d="M480 415 V447" class="arrow"/>
+  <rect x="160" y="452" width="640" height="105" rx="12" fill="#e8effb"/>
+  <text x="480" y="488" text-anchor="middle" class="label">独立 Jenkins 热更新 Job</text>
+  <text x="480" y="524" text-anchor="middle" class="body">old_package_url ＋ new_package_url → ZIP ＋ 上传</text>
+  <path d="M480 557 V589" class="arrow"/>
+  <rect x="160" y="594" width="640" height="108" rx="12" fill="#e5f3ee"/>
+  <text x="480" y="630" text-anchor="middle" class="label">Mars 配置 → 客户端判断适用性</text>
+  <text x="480" y="666" text-anchor="middle" class="body">基准版本、补丁 URL、启用状态、架构与升级规则</text>
+  <text x="480" y="750" text-anchor="middle" class="sub">生成补丁 ≠ 开启热更新；开启热更新 ≠ 所有客户端都会使用该补丁。</text>
+</svg>

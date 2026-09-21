@@ -11,6 +11,7 @@
     "test:search": "node --test scripts/search*.test.mjs",
     "test:bookmarks": "node --test scripts/bookmarks.test.mjs",
     "test:reading-memory": "node --test scripts/reading-memory.test.mjs",
+    "test:layout": "node --test scripts/panel-widths.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

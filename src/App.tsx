@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AppBar,
   Alert,
@@ -55,6 +55,9 @@ import { spaces } from './generated/content';
 import type { ContentEntry, Space } from './types';
 import { searchUrl } from './search';
 import { ContentRenderer } from './components/ContentRenderer';
+import { OnThisPage } from './components/OnThisPage';
+import { ResizeDivider } from './components/ResizeDivider';
+import { usePanelWidths } from './layout/usePanelWidths';
 import { SearchDialog, SearchPage } from './components/Search';
 import { BookmarkButton, BookmarksLink, BookmarksPage } from './components/Bookmarks';
 import { findReadingMemory } from './reading-memory/model';
@@ -73,7 +76,6 @@ type Directory = {
   children: Map<string, Directory>;
 };
 
-const drawerWidth = 300;
 const appBarHeight = 64;
 // Keep the fixed app bar and the navigation drawer below the device safe area.
 // `env(...)` resolves to 0 on desktop, so this does not change the desktop layout.
@@ -274,66 +276,6 @@ function normalizeBreadcrumbs(entry: ContentEntry, space: Space): Breadcrumb[] {
   return [{ title: space.title, route: `/spaces/${space.slug}` }, ...directories];
 }
 
-function OnThisPage({ entry }: { entry?: ContentEntry }) {
-  const headings = useMemo(() => entry?.headings?.filter((heading) => heading.depth > 1) ?? [], [entry?.headings]);
-  const [activeId, setActiveId] = useState(() => {
-    const hash = window.location.hash.slice(1);
-    try { return decodeURIComponent(hash); } catch { return hash; }
-  });
-  useEffect(() => {
-    if (!headings.length) return undefined;
-    let observer: IntersectionObserver | undefined;
-    let retryTimer: number | undefined;
-    let attempts = 0;
-    const hash = window.location.hash.slice(1);
-    let hashId = hash;
-    try { hashId = decodeURIComponent(hash); } catch { /* keep the raw hash when it is malformed */ }
-    setActiveId(headings.some((heading) => heading.id === hashId) ? hashId : headings[0].id);
-    const connect = () => {
-      const elements = headings.map((heading) => document.getElementById(heading.id)).filter((element): element is HTMLElement => Boolean(element));
-      if (!elements.length) {
-        if (attempts < 30) {
-          attempts += 1;
-          retryTimer = window.setTimeout(connect, 120);
-        }
-        return;
-      }
-      observer = new IntersectionObserver((entries) => {
-        const visible = entries.filter((item) => item.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]?.target instanceof HTMLElement) setActiveId(visible[0].target.id);
-      }, { rootMargin: '-96px 0px -62% 0px', threshold: [0, 1] });
-      elements.forEach((element) => observer?.observe(element));
-    };
-    connect();
-    return () => {
-      if (retryTimer) window.clearTimeout(retryTimer);
-      observer?.disconnect();
-    };
-  }, [entry?.route, headings]);
-  const selectHeading = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
-    event.preventDefault();
-    setActiveId(id);
-    const element = document.getElementById(id);
-    element?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${encodeURIComponent(id)}`);
-  };
-  if (!headings.length) return null;
-  return (
-    <Box component="aside" aria-label="本页目录" sx={{ width: { sm: 200, md: 220 }, flexShrink: 0, display: 'block', position: 'sticky', top: 96, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', scrollbarWidth: 'thin' }}>
-      <Box sx={{ pl: 2, borderLeft: 1, borderColor: 'divider' }}>
-        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1.1, fontSize: 11 }}>本页目录</Typography>
-        <List dense disablePadding sx={{ mt: 1 }}>
-          {headings.map((heading) => (
-            <ListItemButton component="a" href={`#${heading.id}`} key={heading.id} onClick={(event) => selectHeading(event, heading.id)} aria-current={activeId === heading.id ? 'location' : undefined} sx={{ py: 0.4, pl: 1.25, pr: 0.75, minHeight: 36, borderRadius: 0.75, borderLeft: '3px solid transparent', color: 'text.secondary', transition: 'background-color 150ms ease, color 150ms ease, border-color 150ms ease', '& .MuiListItemText-primary': { color: 'inherit' }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, ...(activeId === heading.id ? { color: 'primary.main', bgcolor: 'action.selected', borderLeftColor: 'transparent', '& .MuiListItemText-primary': { color: 'primary.main', fontWeight: 700 } } : {}) }}>
-              <ListItemText primary={heading.text} primaryTypographyProps={{ variant: 'caption' }} sx={{ pl: Math.max(0, heading.depth - 2) * 1.5 }} />
-            </ListItemButton>
-          ))}
-        </List>
-      </Box>
-    </Box>
-  );
-}
-
 function EntryBreadcrumbs({ entry, space }: { entry: ContentEntry; space: Space }) {
   const crumbs = normalizeBreadcrumbs(entry, space);
   return (
@@ -459,6 +401,12 @@ function AppShell({ children, currentSpace, activePath, mode, setMode }: { child
   // can no longer accommodate it.
   const hideToc = useMediaQuery('(max-width:767px)');
   const showDesktopSearch = useMediaQuery('(min-width:900px)');
+  const currentEntry = entryForPath(currentSpace, activePath);
+  const navigationVisible = Boolean(currentSpace) && !hideNavigation;
+  const tocVisible = !hideToc && Boolean(currentEntry?.headings?.some((heading) => heading.depth > 1));
+  const { widths, setNavigationWidth, setTocWidth, resetNavigationWidth, resetTocWidth } = usePanelWidths(navigationVisible, tocVisible, showDesktopSearch ? 220 : 200);
+  const drawerWidth = widths.navigationWidth;
+  const tocTopOffset = `calc(${appBarOffset} + 32px)`;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const query = new URLSearchParams(location.search).get('q') ?? '';
@@ -488,8 +436,19 @@ function AppShell({ children, currentSpace, activePath, mode, setMode }: { child
         <Tooltip title="切换主题"><IconButton onClick={() => setMode(resolvedMode === 'light' ? 'dark' : 'light')} aria-label="切换主题" sx={{ minWidth: 44, minHeight: 44 }}>{resolvedMode === 'light' ? <DarkModeOutlined /> : <LightModeOutlined />}</IconButton></Tooltip>
       </Toolbar>
     </AppBar>
-    {currentSpace && <Drawer variant={hideNavigation ? 'temporary' : 'permanent'} open={hideNavigation ? drawerOpen : true} onClose={closeDrawer} ModalProps={{ keepMounted: true }} sx={{ '& .MuiDrawer-paper': { width: { xs: 'min(88vw, 320px)', sm: drawerWidth }, boxSizing: 'border-box', top: appBarOffset, height: `calc(100% - ${appBarOffset})`, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', pb: 'env(safe-area-inset-bottom)', borderRight: 1, borderColor: 'divider', bgcolor: 'background.default' } }}><SpaceNavigation space={currentSpace} activePath={activePath} close={closeDrawer} temporary={hideNavigation} /></Drawer>}
-    <Box component="main" sx={{ ml: currentSpace && !hideNavigation ? drawerWidth + 'px' : 0, pt: appBarOffset, minHeight: '100vh', minWidth: 0, overflowX: 'clip' }}><Container maxWidth={false} sx={{ maxWidth: 1320, minHeight: `calc(100vh - ${appBarOffset})`, display: 'flex', flexDirection: 'column', py: { xs: 2.5, sm: 4.5 }, pb: { xs: 'max(20px, env(safe-area-inset-bottom))', sm: 3 }, px: 0, pl: { xs: 'max(16px, env(safe-area-inset-left))', sm: 4, lg: 5 }, pr: { xs: 'max(16px, env(safe-area-inset-right))', sm: 4, lg: 5 } }}><Box sx={{ display: 'flex', flex: '1 1 auto', minHeight: 0, gap: { sm: 3, md: 5 }, alignItems: 'stretch' }}><Box sx={{ width: '100%', maxWidth: 760, minWidth: 0, flex: '1 1 760px', display: 'flex', flexDirection: 'column' }}>{children}</Box>{currentSpace && activePath !== '/search' && !hideToc && <OnThisPage entry={entryForPath(currentSpace, activePath)} />}</Box></Container></Box>
+    {currentSpace && <Drawer variant={hideNavigation ? 'temporary' : 'permanent'} open={hideNavigation ? drawerOpen : true} onClose={closeDrawer} ModalProps={{ keepMounted: true }} sx={{ '& .MuiDrawer-paper': { width: { xs: 'min(88vw, 320px)', sm: hideNavigation ? 300 : drawerWidth }, boxSizing: 'border-box', top: appBarOffset, height: `calc(100% - ${appBarOffset})`, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', pb: 'env(safe-area-inset-bottom)', borderRight: 1, borderColor: 'divider', bgcolor: 'background.default' } }}><SpaceNavigation space={currentSpace} activePath={activePath} close={closeDrawer} temporary={hideNavigation} /></Drawer>}
+    <Box component="main" sx={{ ml: currentSpace && !hideNavigation ? drawerWidth + 'px' : 0, pt: appBarOffset, minHeight: '100vh', minWidth: 0, overflowX: 'clip' }}>
+      <Container maxWidth={false} sx={{ maxWidth: currentEntry ? 'none' : 1320, minHeight: `calc(100vh - ${appBarOffset})`, display: 'flex', flexDirection: 'column', py: { xs: 2.5, sm: 4.5 }, pb: { xs: 'max(20px, env(safe-area-inset-bottom))', sm: 3 }, px: 0, pl: { xs: 'max(16px, env(safe-area-inset-left))', sm: 4, lg: 5 }, pr: { xs: 'max(16px, env(safe-area-inset-right))', sm: 4, lg: 5 } }}>
+        <Box sx={{ display: 'flex', flex: '1 1 auto', minHeight: 0, gap: currentEntry ? { sm: 4, lg: 5 } : { sm: 3, md: 5 }, alignItems: 'stretch' }}>
+          <Box sx={{ minWidth: 0, flex: '1 1 0%', display: 'flex' }}>
+            <Box sx={{ width: '100%', maxWidth: currentEntry ? 1120 : 760, minWidth: 0, mx: currentEntry ? 'auto' : 0, display: 'flex', flexDirection: 'column' }}>{children}</Box>
+          </Box>
+          {tocVisible && <OnThisPage entry={currentEntry} width={widths.tocWidth} topOffset={tocTopOffset} />}
+        </Box>
+      </Container>
+    </Box>
+    {navigationVisible && <ResizeDivider label="调整左侧导航宽度" side="navigation" offset={drawerWidth} top={appBarOffset} bottom="0px" value={drawerWidth} min={widths.navigationMin} max={widths.navigationMax} onChange={setNavigationWidth} onReset={resetNavigationWidth} />}
+    {tocVisible && <ResizeDivider label="调整右侧目录宽度" side="toc" offset={widths.tocWidth + (hideNavigation ? 32 : 40)} top={tocTopOffset} bottom="max(24px, env(safe-area-inset-bottom))" value={widths.tocWidth} min={widths.tocMin} max={widths.tocMax} onChange={setTocWidth} onReset={resetTocWidth} />}
     <SearchDialog open={searchOpen} initialQuery={query} currentSpace={currentSpace} onClose={() => setSearchOpen(false)} />
   </ThemeProvider>;
 }
