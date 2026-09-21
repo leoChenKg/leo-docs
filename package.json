@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "npm run generate && tsc --noEmit && vite build",
     "check": "npm run generate && tsc --noEmit --pretty false",
+    "test": "node --test scripts/*.test.mjs",
+    "test:pages": "node --test scripts/site-paths.test.mjs scripts/pages.test.mjs",
     "test:search": "node --test scripts/search*.test.mjs",
     "test:bookmarks": "node --test scripts/bookmarks.test.mjs",
     "test:reading-memory": "node --test scripts/reading-memory.test.mjs",

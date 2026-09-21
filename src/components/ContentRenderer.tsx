@@ -19,6 +19,7 @@ import rehypeSlug from 'rehype-slug';
 import hljs from 'highlight.js/lib/common';
 import type { VisualizationSpec } from 'vega-embed';
 import type { ContentEntry } from '../types';
+import { resolveContentHref } from '../site-paths';
 import './content.css';
 
 const EntryContext = createContext<ContentEntry | null>(null);
@@ -35,26 +36,8 @@ const demoFallbacks = import.meta.glob<string>([
   '../../spaces/**/components/**/fallback.md', '../../components/**/fallback.md',
 ], { query: '?raw', import: 'default' });
 
-function normalizePath(value: string) {
-  const parts: string[] = [];
-  for (const part of value.split('/')) {
-    if (part === '..') parts.pop();
-    else if (part && part !== '.') parts.push(part);
-  }
-  return parts.join('/');
-}
-
 function resolveHref(href: string | undefined, entry: ContentEntry | null, asset = false) {
-  if (!href || !entry || /^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(href)) return href;
-  const separator = href.search(/[?#]/);
-  const pathname = separator === -1 ? href : href.slice(0, separator);
-  const suffix = separator === -1 ? '' : href.slice(separator);
-  const relativePath = normalizePath(`${entry.relativePath.split('/').slice(0, -1).join('/')}/${pathname}`);
-  if (asset || /(?:^|\/)assets\//.test(relativePath) || /\.(?!mdx?(?:$))[^/.]+$/i.test(relativePath)) {
-    return `/content/spaces/${entry.spaceSlug}/${relativePath}${suffix}`;
-  }
-  const route = relativePath.replace(/\.mdx?$/i, '').replace(/(?:^|\/)_index$/i, '');
-  return `/spaces/${entry.spaceSlug}${route ? `/${route.replace(/\/$/, '')}` : ''}${suffix}`;
+  return resolveContentHref(href, entry, import.meta.env.BASE_URL, asset);
 }
 
 function ContentLink({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {

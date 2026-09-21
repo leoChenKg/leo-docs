@@ -1,8 +1,10 @@
 # Leo Learn
 
-Leo Learn 是一个由文件驱动的本地静态学习文档站。内容直接维护在 `spaces/` 下的 Markdown/MDX、资源和 Demo 文件中；开发服务器会自动重新生成空间导航、目录页和搜索数据。
+Leo Learn 是一个由文件驱动的静态学习文档站，支持本地运行和 GitHub Pages 在线访问。内容直接维护在 `spaces/` 下的 Markdown/MDX、资源和 Demo 文件中；开发服务器会自动重新生成空间导航、目录页和搜索数据。
 
-项目已清空开发阶段的示例空间，`spaces/` 当前为空。正式使用时按下方步骤创建自己的空间；文档中的空间名、文章名和 Demo 名称均为格式示例，需要自行创建对应文件。
+[在线访问](https://leochenkg.github.io/leo-docs/) · [部署工作流](https://github.com/leoChenKg/leo-docs/actions/workflows/pages.yml)
+
+当前包含“桌面端 → 应用交付 → 发布流程”。新增空间可参考下方示例。
 
 项目说明和长期维护规范：
 
@@ -18,6 +20,10 @@ npm run dev
 ```
 
 然后打开 `http://localhost:5173`。生产构建使用 `npm run build`，构建结果位于 `dist/`。
+
+## 在线发布
+
+推送到 `master` 后，GitHub Actions 会运行测试、构建并发布到 GitHub Pages。文章链接支持直接打开和刷新。部署子路径由 `VITE_BASE_PATH` 指定，当前站点使用 `/leo-docs/`；完整配置和本地预览方式见[运行手册](docs/project-guide.md#github-pages)。
 
 ## 新增文档空间
 

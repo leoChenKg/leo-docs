@@ -8,10 +8,14 @@ import remarkFrontmatter from 'remark-frontmatter';
 import rehypeKatex from 'rehype-katex';
 import rehypeSlug from 'rehype-slug';
 import { generateContent } from './scripts/content.mjs';
+import { collectPageRoutes, writePageEntries } from './scripts/pages.mjs';
 
 function contentPlugin(): Plugin {
   let root = process.cwd();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let outputDirectory = path.join(root, 'dist');
+  let exportPages = false;
+  let pageRoutes: string[] = [];
 
   const refresh = async (server?: { ws: { send: (message: { type: string }) => void } }) => {
     if (timer) clearTimeout(timer);
@@ -25,6 +29,8 @@ function contentPlugin(): Plugin {
     name: 'leo-content-loader',
     async configResolved(config) {
       root = config.root;
+      outputDirectory = path.resolve(root, config.build.outDir);
+      exportPages = config.command === 'build' && config.build.write;
       await generateContent(root);
     },
     configureServer(server) {
@@ -41,12 +47,16 @@ function contentPlugin(): Plugin {
       });
     },
     async buildStart() {
-      await generateContent(root);
+      pageRoutes = collectPageRoutes(await generateContent(root));
+    },
+    async writeBundle() {
+      if (exportPages) await writePageEntries(outputDirectory, pageRoutes);
     },
   };
 }
 
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [contentPlugin(), mdx({ remarkPlugins: [remarkFrontmatter, remarkGfm, remarkMath], rehypePlugins: [rehypeKatex, rehypeSlug] }), react()],
   server: { port: 5173 },
   build: { target: 'es2022' },

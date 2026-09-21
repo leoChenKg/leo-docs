@@ -137,6 +137,7 @@ export async function generateContent(root = process.cwd()) {
   const previousSearch = await fs.readFile(searchDestination, 'utf8').catch(() => '');
   if (previousSearch !== searchOutput) await fs.writeFile(searchDestination, searchOutput, 'utf8');
   await fs.rm(path.join(generatedDir, 'taxonomy.ts'), { force: true });
+  return spaces;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await generateContent();

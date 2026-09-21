@@ -54,9 +54,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { spaces } from './generated/content';
 import type { ContentEntry, Space } from './types';
 import { searchUrl } from './search';
+import { stripBasePath } from './site-paths';
 import { ContentRenderer } from './components/ContentRenderer';
 import { OnThisPage } from './components/OnThisPage';
 import { ResizeDivider } from './components/ResizeDivider';
+import { BackToTop } from './components/BackToTop';
 import { usePanelWidths } from './layout/usePanelWidths';
 import { SearchDialog, SearchPage } from './components/Search';
 import { BookmarkButton, BookmarksLink, BookmarksPage } from './components/Bookmarks';
@@ -325,7 +327,7 @@ function DocPage({ entry, space }: { entry: ContentEntry; space: Space }) {
   const updatedAt = entry.updatedAt || entry.date;
   return <>
     <EntryBreadcrumbs entry={entry} space={space} />
-    <Typography component="h1" variant="h3" sx={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>{entry.title}</Typography>
+    <Typography component="h1" variant="h3" tabIndex={-1} sx={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>{entry.title}</Typography>
     {entry.description && <Typography variant="h6" component="p" color="text.secondary" sx={{ mt: { xs: 0.75, sm: 1 }, fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.6, fontWeight: 400, overflowWrap: 'anywhere' }}>{entry.description}</Typography>}
     {(tags.length > 0 || Boolean(updatedAt) || Boolean(entry.sourcePath)) && <Box aria-label="文章信息" sx={{ mt: { xs: 2, sm: 2.5 }, mb: { xs: 2.5, sm: 3 } }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 1.25, sm: 2 }} alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -358,7 +360,7 @@ function SpaceHome({ space }: { space: Space }) {
   const docs = space.entries.filter((entry) => !entry.draft && entry.kind !== 'index').sort((a, b) => (b.updatedAt || b.date || '').localeCompare(a.updatedAt || a.date || '')).slice(0, 8);
   return <>
     <Breadcrumbs sx={{ mb: { xs: 1.5, sm: 2 }, '& .MuiBreadcrumbs-ol': { flexWrap: 'wrap' } }}><Typography color="text.secondary">文档空间</Typography><Typography color="text.primary" sx={{ overflowWrap: 'anywhere' }}>{space.title}</Typography></Breadcrumbs>
-    <Stack direction="row" spacing={{ xs: 0.75, sm: 1 }} alignItems="center"><MenuBookOutlined color="primary" sx={{ fontSize: { xs: 28, sm: 32 }, flexShrink: 0 }} /><Typography component="h1" variant="h3" sx={{ fontWeight: 800, fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>{space.title}</Typography></Stack>
+    <Stack direction="row" spacing={{ xs: 0.75, sm: 1 }} alignItems="center"><MenuBookOutlined color="primary" sx={{ fontSize: { xs: 28, sm: 32 }, flexShrink: 0 }} /><Typography component="h1" variant="h3" tabIndex={-1} sx={{ fontWeight: 800, fontSize: { xs: '2.125rem', sm: '2.75rem' }, lineHeight: { xs: 1.2, sm: 1.15 }, overflowWrap: 'anywhere' }}>{space.title}</Typography></Stack>
     {space.description && <Typography variant="h6" component="p" color="text.secondary" sx={{ mt: { xs: 0.75, sm: 1 }, fontSize: { xs: '1.125rem', sm: '1.25rem' }, lineHeight: 1.6, fontWeight: 400, overflowWrap: 'anywhere' }}>{space.description}</Typography>}
     {index?.body && <><Divider sx={{ my: { xs: 3, sm: 4 } }} /><ContentRenderer entry={{ ...index, body: withoutPageTitle(index) }} /></>}
     <Typography variant="h5" component="h2" sx={{ mt: { xs: 4, sm: 5 }, mb: 2, fontWeight: 700, fontSize: { xs: '1.5rem', sm: '1.75rem' } }}>最近文档</Typography>
@@ -449,6 +451,7 @@ function AppShell({ children, currentSpace, activePath, mode, setMode }: { child
     </Box>
     {navigationVisible && <ResizeDivider label="调整左侧导航宽度" side="navigation" offset={drawerWidth} top={appBarOffset} bottom="0px" value={drawerWidth} min={widths.navigationMin} max={widths.navigationMax} onChange={setNavigationWidth} onReset={resetNavigationWidth} />}
     {tocVisible && <ResizeDivider label="调整右侧目录宽度" side="toc" offset={widths.tocWidth + (hideNavigation ? 32 : 40)} top={tocTopOffset} bottom="max(24px, env(safe-area-inset-bottom))" value={widths.tocWidth} min={widths.tocMin} max={widths.tocMax} onChange={setTocWidth} onReset={resetTocWidth} />}
+    {currentEntry && <BackToTop key={currentEntry.route} right={tocVisible ? widths.tocWidth + (hideNavigation ? 64 : 80) : undefined} />}
     <SearchDialog open={searchOpen} initialQuery={query} currentSpace={currentSpace} onClose={() => setSearchOpen(false)} />
   </ThemeProvider>;
 }
@@ -471,6 +474,11 @@ function useArticleReadingMemory(entry: ContentEntry | undefined, routeHash: str
     let attempts = 0;
     let previousHeight = -1;
     let stableFrames = 0;
+    let lastKnownHash = routeHash;
+    const rememberHash = () => {
+      if (stripBasePath(window.location.pathname, import.meta.env.BASE_URL) === entry.route) lastKnownHash = window.location.hash;
+      return lastKnownHash;
+    };
 
     const savePosition = () => {
       const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -480,10 +488,11 @@ function useArticleReadingMemory(entry: ContentEntry | undefined, routeHash: str
         scrollRatio: maxScroll > 0 ? scrollTop / maxScroll : 0,
         // Keep hash changes made with history.replaceState on the same page,
         // while avoiding a destination hash during Link-navigation cleanup.
-        hash: window.location.pathname === entry.route ? window.location.hash : routeHash,
+        hash: rememberHash(),
       });
     };
     const scheduleSave = () => {
+      rememberHash();
       if (restoring) return;
       if (saveTimer) window.clearTimeout(saveTimer);
       saveTimer = window.setTimeout(savePosition, 180);
