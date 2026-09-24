@@ -10,6 +10,7 @@ Leo Learn 是一个由文件驱动的静态学习文档站，支持本地运行�
 
 - [项目介绍与运行手册](docs/project-guide.md)：架构、启动、构建、路由、浏览器状态和排错。
 - [文档编写与 AI 协作规范](docs/content-authoring-guide.md)：Front Matter、Markdown/MDX、资源、Demo、模板和验收清单。
+- [内容与目录组织规范](docs/content-organization-guide.md)：按学习目标划分主题、拆分与合并文章、去重，以及按需选用图示和交互 Demo。
 - [目录总览模板](docs/templates/directory-index.md)、[文章模板](docs/templates/article.md)、[Demo 模板](docs/templates/demo.md)。
 
 ## 启动
@@ -48,7 +49,7 @@ spaces/
 tags: [JavaScript, 异步]
 ```
 
-图片使用标准 Markdown 图片语法；指向本地 MP4/WebM/OGV/MP3/WAV/M4A/OGG/FLAC 的 Markdown 链接会自动渲染为播放器。完整内容边界、链接规则和 AI 生成流程见上面的两份手册。
+图片使用标准 Markdown 图片语法；指向本地 MP4/WebM/OGV/MP3/WAV/M4A/OGG/FLAC 的 Markdown 链接会自动渲染为播放器。完整内容边界、链接规则和 AI 生成流程见上面的项目手册与内容规范。
 
 ## 内容块
 

@@ -1,6 +1,6 @@
 # Leo Learn 项目介绍与运行手册
 
-> 依据当前仓库实现核对，更新于 2026-09-21。内容创作请继续阅读 [文档编写与 AI 协作规范](content-authoring-guide.md)。历史 PRD 和设计稿用于了解背景，不能作为功能已经实现的证明。
+> 依据当前仓库实现核对，更新于 2026-09-21。内容创作请继续阅读 [文档编写与 AI 协作规范](content-authoring-guide.md)和[内容与目录组织规范](content-organization-guide.md)。历史 PRD 和设计稿用于了解背景，不能作为功能已经实现的证明。
 
 ## 1. 项目是什么
 
@@ -100,6 +100,7 @@ leo-docs/
 ├── docs/
 │   ├── project-guide.md            本手册：项目和运行
 │   ├── content-authoring-guide.md  内容格式、实操、AI 工作流程
+│   ├── content-organization-guide.md  主题划分、文章拆合与图文表达
 │   └── templates/                  可复制的内容与 Demo 模板
 ├── spaces/
 │   └── frontend/

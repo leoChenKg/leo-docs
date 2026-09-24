@@ -1,6 +1,6 @@
 # 文档编写与 AI 协作规范
 
-这份规范面向维护者和负责生成内容的 AI。它只描述当前 Leo Learn 代码已经支持的写法。开始任务前先阅读本文件和 project-guide.md，再读取目标空间现有的 space.yml、祖先目录 _index.md 和相邻文章。
+这份规范面向维护者和负责生成内容的 AI，负责当前 Leo Learn 已支持的写法与接入流程。主题划分、文章拆合、去重和图文选型统一见[内容与目录组织规范](./content-organization-guide.md)。开始任务前先阅读本文件、project-guide.md 和该组织规范，再读取目标空间现有的 space.yml、祖先目录 _index.md 和相邻文章。
 
 当前项目已移除开发用示例空间。下文的 frontend、closure-counter 等名称只是语法示例，不表示对应文件已经存在。首次创建内容时从 docs/templates/ 开始，创建自己的 space.yml、目录首页和文章；不要继续引用尚未创建的示例路径或 Demo。
 
@@ -26,10 +26,11 @@ spaces/frontend/
 ## 2. AI 接任务的固定流程
 
 1. 读取 docs/project-guide.md，确认项目能力和边界。
-2. 读取 spaces/<slug>/space.yml，确认空间名称和简介。
-3. 读取目标目录到空间根目录之间的全部 _index.md/_index.mdx，确认术语、顺序和已有范围。
-4. 读取目标目录中 2–3 篇相邻文章，模仿标题层级、代码风格和链接写法。
-5. 检查目标目录下是否已有 assets、components 和相同主题的 Demo。
+2. 读取 docs/content-organization-guide.md，按学习目标判断内容归属、拆合与表达方式。
+3. 读取 spaces/<slug>/space.yml，确认空间名称和简介。
+4. 读取目标目录到空间根目录之间的全部 _index.md/_index.mdx，确认术语、顺序和已有范围。
+5. 读取目标目录中 2–3 篇相邻文章，确认已有讲解与示例，沿用合适的术语、代码风格和链接写法。
+6. 检查目标目录下是否已有 assets、空间根下是否已有 components，以及是否有可复用的图示或 Demo；按解释需要选择，避免重复创建。
 
 不要只根据历史 PRD、截图或 URL 猜测功能。要以源代码和当前可运行页面为准。
 
@@ -85,68 +86,17 @@ date: 2026-09-19
 
 首个正文 H1 建议与 title 完全一致。渲染器会隐藏这个重复 H1，保留元数据标题；如果两者不一致，页面可能出现两个标题。
 
-## 4. 内容组织模板
+## 4. 内容组织与模板
 
-一篇文章只解决一个主要问题。推荐顺序：
+目录与文章的职责、何时拆分或合并、如何保留完整示例，统一遵循[内容与目录组织规范](./content-organization-guide.md)。章节按主题需要选择，不按字数或行数分篇，也不要求每篇套用相同的小节。
 
-1. 学习目标：读者完成后能做什么。
-2. 问题背景：为什么需要这个概念。
-3. 核心模型：用少量术语建立心智模型。
-4. 最小示例：先给可以运行或验证的例子。
-5. 逐步拆解：解释输入、输出、状态变化和关键代码。
-6. 边界与错误：说明不适用场景、常见误解和排查方法。
-7. 实践建议：给出迁移到项目的做法。
-8. 小结与下一步：总结 2–4 个可复用结论，链接同目录文章。
+- [目录总览模板](./templates/directory-index.md)：说明主题边界、文章分工和阅读路线。
+- [文章模板](./templates/article.md)：围绕读者问题建立概念、示例、解释与边界。
+- [Demo 模板](./templates/demo.md)：在交互有明确学习收益时说明接入、操作与验证。
+
+复制模板时删除作者注释、不适用的小节和占位内容；替换标题、日期和链接。图示、表格、媒体与 Demo 都按解释需要选用，不是模板的必填项。
 
 标题从 ## 开始递进，不要跳过层级。使用具体标题，例如“微任务为什么先于定时器执行”，不要使用“详解”“其他”“补充”等无法检索的标题。
-
-~~~~md
----
-title: <主题：解决什么问题>
-description: <读者读完后能完成的事情>
-type: doc
-tags:
-  - <领域>
-  - <核心概念>
-order: 10
-date: 2026-09-19
----
-
-# <主题：解决什么问题>
-
-## 学习目标
-
-- <目标一>
-- <目标二>
-
-## 问题背景
-
-<用一段话说明真实场景和本文边界。>
-
-## 核心模型
-
-<先解释概念之间的关系。>
-
-:::info 先记住
-<一条最重要的判断规则。>
-:::
-
-## 最小示例
-
-~~~ts
-// 可直接运行；如果是伪代码，明确标注“伪代码”
-~~~
-
-## 逐步拆解
-
-### 第一步：<动作>
-
-<解释为什么这样做，以及如何验证。>
-
-## 小结
-
-<可迁移结论，以及下一篇推荐阅读。>
-~~~~
 
 ## 5. Markdown 和 MDX 的准确边界
 
@@ -237,6 +187,8 @@ flowchart LR
 
 ## 6. 资源、链接与 Demo
 
+是否需要图示或交互演示，先按[组织规范的选型原则](./content-organization-guide.md#6-主动选择有解释价值的图文表达)判断；本节只说明选定后的资源路径和接入方式。
+
 资源原件放在当前空间的 assets 目录，生成器会复制它们：
 
 ~~~text
@@ -271,11 +223,10 @@ spaces/frontend/assets/
 ~~~text
 spaces/frontend/components/demos/closure-counter/
 ├── Demo.tsx
-├── fallback.md
-└── index.ts
+└── fallback.md
 ~~~
 
-Demo.tsx 必须默认导出 React 组件，并使用 MUI 组件。页面提供“交互预览 / 源码”页签和重置按钮：
+Demo.tsx 必须默认导出 React 组件，并使用 MUI 组件。页面提供“交互预览 / 源码”页签和重置按钮；源码页签只展示 Demo.tsx，辅助文件如有必要应在正文另行说明，index.ts 不是接入要求：
 
 ~~~mdx
 <Demo name="closure-counter" title="在线体验" />
@@ -331,7 +282,8 @@ npm run build
 
 ~~~text
 你正在维护 Leo Learn 本地静态文档站。请先阅读
-docs/project-guide.md 和 docs/content-authoring-guide.md，再读取目标空间的
+docs/project-guide.md、docs/content-authoring-guide.md 和
+docs/content-organization-guide.md，再读取目标空间的
 space.yml、祖先目录 _index.md 和相邻文章。内容只能通过 spaces/ 下的
 Markdown/MDX、assets 和 components 文件实现，不要修改 generated 文件，
 不要新增页面编辑器。
@@ -339,7 +291,9 @@ Markdown/MDX、assets 和 components 文件实现，不要修改 generated 文�
 任务：在 spaces/<space>/<directory>/ 下新增或修改 <文件名>。
 目标读者：<读者>。
 读者完成后应能：<能力>。
-必须包含：<代码/公式/图表/媒体/Demo/边界条件>。
+内容要求：<按主题确定必要的解释、示例和边界>。
+按学习目标划分文章和目录，保留完整论证与可运行示例，不以字数或行数拆篇。
+主动评估图示、表格和交互 Demo；只有能帮助理解时采用，不强行添加。
 请使用项目已支持的组件和语法，提供准确 Front Matter、相对链接和可验证示例。
 完成后运行 npm run check；如涉及 MDX、Demo 或资源，再运行 npm run build，
 并说明验证结果。
