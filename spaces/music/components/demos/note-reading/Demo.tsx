@@ -1,8 +1,10 @@
-import { useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  Box, Button, FormControl, FormControlLabel, InputLabel, MenuItem,
+  Alert, Box, Button, FormControl, FormControlLabel, IconButton, InputLabel, MenuItem,
   Paper, Select, Stack, Switch, ToggleButton, Typography,
 } from '@mui/material';
+import { PlayArrowRounded, StopRounded, VolumeUpRounded } from '@mui/icons-material';
+import { NOTE_PITCHES, NotePlayer } from './playback';
 
 const solfege = ['do', 're', 'mi', 'fa', 'sol', 'la', 'si'] as const;
 const allNotes = [1, 2, 3, 4, 5, 6, 7];
@@ -28,11 +30,80 @@ function createExercise() {
 
 export default function NoteReadingDemo() {
   const [exercise, setExercise] = useState(createExercise);
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [startingAudio, setStartingAudio] = useState(false);
+  const [audioError, setAudioError] = useState('');
+  const playerRef = useRef<NotePlayer | null>(null);
+  const playbackIndices = useRef<number[]>([]);
+  const playbackRequest = useRef(0);
+  const rootRef = useRef<HTMLDivElement>(null);
   const id = useId();
   const { settings, question, revealed, round } = exercise;
   const singleNote = settings.notes.length === 1;
+  const audioActive = startingAudio || playingIndex !== null;
+
+  const stopPlayback = useCallback(() => {
+    playbackRequest.current += 1;
+    playerRef.current?.stop();
+    setPlayingIndex(null);
+    setStartingAudio(false);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const player = new NotePlayer((index) => {
+      if (mounted) setPlayingIndex(index === null ? null : playbackIndices.current[index]);
+    });
+    playerRef.current = player;
+    const onVisibilityChange = () => {
+      if (document.hidden) stopPlayback();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    // The shared Demo wrapper hides (rather than unmounts) its preview tab.
+    const panel = rootRef.current?.closest<HTMLElement>('[role="tabpanel"]');
+    const observer = new MutationObserver(() => {
+      if (panel?.hidden) stopPlayback();
+    });
+    if (panel) observer.observe(panel, { attributes: true, attributeFilter: ['hidden'] });
+
+    return () => {
+      mounted = false;
+      playbackRequest.current += 1;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      observer.disconnect();
+      player.dispose();
+      playerRef.current = null;
+    };
+  }, [stopPlayback]);
+
+  async function playAnswer(indices: number[]) {
+    if (!revealed || !playerRef.current) return;
+    stopPlayback();
+    const request = playbackRequest.current;
+    playbackIndices.current = indices;
+    setAudioError('');
+    setStartingAudio(true);
+    try {
+      await playerRef.current.play(indices.map((index) => question[index]));
+    } catch {
+      if (playbackRequest.current === request) {
+        setAudioError('暂时无法播放，请再次点击播放；若仍失败，请换用支持音频播放的浏览器。文字答案仍可查看。');
+      }
+    } finally {
+      if (playbackRequest.current === request) setStartingAudio(false);
+    }
+  }
+
+  function toggleAnswer() {
+    stopPlayback();
+    setAudioError('');
+    setExercise((current) => ({ ...current, revealed: !current.revealed }));
+  }
 
   function newQuestion(nextSettings = settings) {
+    stopPlayback();
+    setAudioError('');
     // A single selected note necessarily repeats; keep the control consistent.
     const normalized = nextSettings.notes.length === 1
       ? { ...nextSettings, allowRepeat: true }
@@ -54,7 +125,7 @@ export default function NoteReadingDemo() {
     newQuestion({ ...settings, notes });
   }
 
-  return <Stack spacing={3} sx={{ minWidth: 0 }}>
+  return <Stack ref={rootRef} spacing={3} sx={{ minWidth: 0 }}>
     <Box>
       <Typography component="h2" variant="h6">看数字，读唱名</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -108,26 +179,57 @@ export default function NoteReadingDemo() {
         <Box role="status" aria-live="polite" aria-atomic="true">
           <Typography variant="overline" color="primary.main" sx={{ fontWeight: 700 }}>第 {round} 组 · {question.length} 个音符</Typography>
           <Typography variant="body2" color="text.secondary">
-            {revealed ? '答案已展开，唱名在对应数字下方。' : '答案已隐藏，先按从左到右、从上到下的顺序读。'}
+            {revealed ? '答案已展开，可逐个听单音，也可播放整组核对。' : '答案已隐藏，先按从左到右、从上到下的顺序读。'}
           </Typography>
         </Box>
 
         <Box id={`${id}-question`} role="list" aria-label={`第 ${round} 组练习`}
-          sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(48px, 1fr))', gap: { xs: 1, sm: 1.5 } }}>
+          sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: { xs: 1, sm: 1.5 } }}>
           {question.map((note, index) => <Box key={index} role="listitem"
-            aria-label={`第 ${index + 1} 个：${note}${revealed ? `，唱名 ${solfege[note - 1]}` : ''}`}
-            sx={{ minWidth: 0, py: 1.5, px: 0.5, textAlign: 'center', border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'background.paper' }}>
+            aria-label={`第 ${index + 1} 个：${note}${revealed ? `，唱名 ${solfege[note - 1]}，参考音 ${NOTE_PITCHES[note - 1].name}` : ''}`}
+            aria-current={playingIndex === index ? 'true' : undefined}
+            sx={{ minWidth: 0, py: 1.5, px: 0.5, textAlign: 'center', border: 1,
+              borderColor: playingIndex === index ? 'primary.main' : 'divider', borderRadius: 1.5,
+              bgcolor: playingIndex === index ? 'action.selected' : 'background.paper' }}>
             <Typography aria-hidden="true" sx={{ fontSize: { xs: 32, sm: 40 }, fontWeight: 600, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>{note}</Typography>
             <Typography aria-hidden="true" variant="body2" color={revealed ? 'primary.main' : 'text.disabled'}
               sx={{ mt: 1, fontWeight: 600, minHeight: '1.5em' }}>
               {revealed ? solfege[note - 1] : '· · ·'}
             </Typography>
+            {revealed && <>
+              <Typography aria-hidden="true" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {NOTE_PITCHES[note - 1].name}
+              </Typography>
+              <IconButton aria-label={`播放第 ${index + 1} 个音：${solfege[note - 1]}（${NOTE_PITCHES[note - 1].name}）`}
+                color={playingIndex === index ? 'primary' : 'default'}
+                onClick={() => void playAnswer([index])} sx={{ width: 44, height: 44, mt: 0.5 }}>
+                <VolumeUpRounded fontSize="small" />
+              </IconButton>
+            </>}
           </Box>)}
         </Box>
 
+        {revealed && <Stack spacing={1}>
+          <Typography variant="caption" color="text.secondary">参考音：C 大调 · 1 = C4 · 合成单音</Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <Button variant="contained" startIcon={<PlayArrowRounded />}
+              onClick={() => void playAnswer(question.map((_, index) => index))} sx={{ minHeight: 44 }}>
+              播放整组答案
+            </Button>
+            <Button variant="outlined" startIcon={<StopRounded />} disabled={!audioActive}
+              onClick={stopPlayback} sx={{ minHeight: 44 }}>停止播放</Button>
+          </Stack>
+          <Typography role="status" aria-live="polite" aria-atomic="true" variant="body2" color="text.secondary">
+            {startingAudio ? '正在准备播放…' : playingIndex !== null
+              ? `正在播放第 ${playingIndex + 1} / ${question.length} 个：${solfege[question[playingIndex] - 1]}（${NOTE_PITCHES[question[playingIndex] - 1].name}）`
+              : '点击喇叭听对应单音，或按题目顺序播放整组。'}
+          </Typography>
+          {audioError && <Alert severity="warning">{audioError}</Alert>}
+        </Stack>}
+
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button variant={revealed ? 'outlined' : 'contained'} aria-expanded={revealed} aria-controls={`${id}-question`}
-            onClick={() => setExercise((current) => ({ ...current, revealed: !current.revealed }))}
+            onClick={toggleAnswer}
             sx={{ minHeight: 44 }}>
             {revealed ? '隐藏答案，再读一遍' : '查看答案'}
           </Button>
