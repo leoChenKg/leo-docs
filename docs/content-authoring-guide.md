@@ -161,6 +161,8 @@ Alert、AlertTitle、Tabs、Tab、Accordion、AccordionSummary、AccordionDetail
 
 ### 5.4 Mermaid 和 Vega-Lite
 
+Markdown 的 mermaid 代码围栏与 MDX 的 Mermaid 组件共用全屏查看功能，无需额外配置。点击图表或右上角全屏图标后可缩放和拖动；支持电脑滚轮、触控板与移动端双指缩放，可用“适应窗口”复位。
+
 ~~~~md
 ~~~mermaid
 flowchart LR
@@ -262,7 +264,7 @@ Demo 名称只允许字母、数字、下划线、连字符和 /，不能包含 
 - 1200px 以上左侧导航常驻；低于此宽度左侧改为抽屉。
 - 767px 及以下隐藏右侧“本页目录”。
 - 899px 及以下 Header 搜索输入框变为搜索按钮；600px 以下隐藏空间切换器。
-- 表格、代码、Mermaid 和 KaTeX 长内容在自身区域横向滚动。
+- 表格、代码、Mermaid 和 KaTeX 长内容在自身区域横向滚动；Mermaid 还支持全屏缩放和拖动，需检查窄屏下的入口、操作与关闭后阅读位置。
 - 图片补充准确 alt；视频和音频提供 title；Demo 要能键盘操作。
 - 浅色和深色模式都要检查，避免固定宽度和文字溢出。
 

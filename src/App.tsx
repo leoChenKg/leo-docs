@@ -60,6 +60,7 @@ import { OnThisPage } from './components/OnThisPage';
 import { ResizeDivider } from './components/ResizeDivider';
 import { BackToTop } from './components/BackToTop';
 import { usePanelWidths } from './layout/usePanelWidths';
+import { appBarOffset, appBarStyles, toolbarStyles } from './layout/header-styles';
 import { SearchDialog, SearchPage } from './components/Search';
 import { BookmarkButton, BookmarksLink, BookmarksPage } from './components/Bookmarks';
 import { findReadingMemory } from './reading-memory/model';
@@ -78,10 +79,6 @@ type Directory = {
   children: Map<string, Directory>;
 };
 
-const appBarHeight = 64;
-// Keep the fixed app bar and the navigation drawer below the device safe area.
-// `env(...)` resolves to 0 on desktop, so this does not change the desktop layout.
-const appBarOffset = `calc(${appBarHeight}px + env(safe-area-inset-top))`;
 const asSpaces = spaces as unknown as Space[];
 
 function visibleSpaces() {
@@ -425,8 +422,8 @@ function AppShell({ children, currentSpace, activePath, mode, setMode }: { child
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   return <ThemeProvider theme={theme}><CssBaseline enableColorScheme />
-    <AppBar position="fixed" color="inherit" elevation={0} sx={{ pt: 'env(safe-area-inset-top)', borderBottom: 1, borderColor: 'divider', bgcolor: alpha(theme.palette.background.default, 0.6), backdropFilter: 'blur(8px)', color: resolvedMode === 'dark' ? 'grey.500' : 'grey.800', zIndex: (value) => value.zIndex.drawer + 1 }}>
-      <Toolbar sx={{ minHeight: appBarHeight + 'px !important', gap: { xs: 0.25, sm: 1.25 }, px: 0, pl: { xs: 'max(8px, env(safe-area-inset-left))', sm: 2.5 }, pr: { xs: 'max(8px, env(safe-area-inset-right))', sm: 2.5 } }}>
+    <AppBar position="fixed" color="inherit" elevation={0} sx={{ ...appBarStyles(theme), zIndex: (value) => value.zIndex.drawer + 1 }}>
+      <Toolbar sx={toolbarStyles}>
         {hideNavigation && currentSpace && <IconButton onClick={() => setDrawerOpen(true)} aria-label="打开导航" sx={{ minWidth: 44, minHeight: 44 }}><MenuRounded /></IconButton>}
         <MuiLink component={Link} to="/" underline="none" color="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mr: { xs: 0, md: 1.5 }, flexShrink: 0 }}><MenuBookOutlined color="primary" sx={{ fontSize: 28 }} /><Typography variant="h6" fontWeight={700}>文档</Typography></MuiLink>
         <Divider orientation="vertical" flexItem sx={{ height: 28, alignSelf: 'center', borderColor: 'divider', display: { xs: 'none', sm: 'block' } }} />

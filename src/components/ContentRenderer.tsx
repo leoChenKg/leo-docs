@@ -1,6 +1,6 @@
 import {
   Children, Component, Suspense, createContext, isValidElement, lazy,
-  useContext, useEffect, useId, useMemo, useRef, useState,
+  useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type ComponentType, type HTMLAttributes, type ReactNode,
 } from 'react';
 import {
@@ -10,7 +10,8 @@ import {
   TableCell, TableContainer, TableHead, TableRow, Tabs, Tooltip, Typography,
   useTheme, type AlertColor, type AlertProps,
 } from '@mui/material';
-import { Close, ContentCopy, ExpandMore, OpenInFull, RestartAlt } from '@mui/icons-material';
+import { Close, ContentCopy, ExpandMore, FullscreenRounded, OpenInFull, RestartAlt } from '@mui/icons-material';
+import { alpha } from '@mui/material/styles';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -20,6 +21,7 @@ import hljs from 'highlight.js/lib/common';
 import type { VisualizationSpec } from 'vega-embed';
 import type { ContentEntry } from '../types';
 import { resolveContentHref } from '../site-paths';
+import { MermaidViewer } from './MermaidViewer';
 import './content.css';
 
 const EntryContext = createContext<ContentEntry | null>(null);
@@ -122,9 +124,17 @@ export function Mermaid({ children, code }: { children?: ReactNode; code?: strin
   const id = useId().replace(/[^a-z\d]/gi, '');
   const theme = useTheme();
   const container = useRef<HTMLDivElement>(null);
+  const previewScrollLeft = useRef(0);
+  const [open, setOpen] = useState(false);
+  const [previewHeight, setPreviewHeight] = useState(0);
   const [state, setState] = useState<{ svg: string; error: string; loading: boolean }>({ svg: '', error: '', loading: true });
+  useLayoutEffect(() => {
+    if (!open && container.current) container.current.scrollLeft = previewScrollLeft.current;
+  }, [open, state.svg]);
   useEffect(() => {
     let active = true;
+    previewScrollLeft.current = 0;
+    setOpen(false);
     setState({ svg: '', error: '', loading: true });
     void (async () => {
       try {
@@ -138,13 +148,28 @@ export function Mermaid({ children, code }: { children?: ReactNode; code?: strin
     })();
     return () => { active = false; };
   }, [source, id, theme.palette.mode]);
+  const openViewer = () => {
+    previewScrollLeft.current = container.current?.scrollLeft ?? 0;
+    setPreviewHeight(container.current?.getBoundingClientRect().height ?? 0);
+    setOpen(true);
+  };
   return <Paper variant="outlined" sx={{ my: 3, overflow: 'hidden' }}>
-    <Box sx={{ p: { xs: 1, sm: 2 }, overflowX: 'auto' }}>
+    <Box sx={{ position: 'relative', p: { xs: 1, sm: 2 }, overflowX: 'auto' }}>
       {state.loading && <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={18} /><Typography variant="body2">正在渲染图表…</Typography></Stack>}
       {state.error && <Alert severity="error"><AlertTitle>Mermaid 图表无法渲染</AlertTitle><Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap' }}>{state.error}</Typography></Alert>}
-      {state.svg && <div ref={container} className="content-mermaid" role="img" aria-label="Mermaid 图表" dangerouslySetInnerHTML={{ __html: state.svg }} />}
+      {state.svg && <><ButtonBase component="div" className="content-mermaid-button" aria-label="打开 Mermaid 图表" aria-haspopup="dialog"
+        onClick={openViewer} sx={{ display: 'block', width: '100%', cursor: 'zoom-in', borderRadius: 1 }}>
+        {/* Keep the article's height, but only mount one copy of SVG IDs/markers. */}
+        {open ? <div style={{ height: previewHeight }} /> : <div ref={container} className="content-mermaid" role="img" aria-label="Mermaid 图表" dangerouslySetInnerHTML={{ __html: state.svg }} />}
+      </ButtonBase>
+        <Tooltip title="全屏查看"><IconButton aria-label="全屏查看 Mermaid 图表" aria-haspopup="dialog" onClick={openViewer}
+          sx={{ position: 'absolute', top: 8, right: 8, width: 44, height: 44, borderRadius: 1, color: 'text.secondary', bgcolor: alpha(theme.palette.background.default, 0.6), backdropFilter: 'blur(8px)', '&:hover': { color: 'primary.main', bgcolor: 'action.hover' } }}>
+          <FullscreenRounded />
+        </IconButton></Tooltip>
+      </>}
     </Box>
     <Divider /><SourceDetails source={source} language="mermaid" />
+    {open && state.svg && <MermaidViewer svg={state.svg} onClose={() => setOpen(false)} />}
   </Paper>;
 }
 

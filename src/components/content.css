@@ -34,6 +34,9 @@
 .rich-content .content-mermaid { min-width: 0; text-align: center; }
 .rich-content .content-mermaid { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .rich-content .content-mermaid svg { max-width: 100%; height: auto; }
+.content-mermaid-button.Mui-focusVisible { outline: 2px solid var(--docs-primary); outline-offset: 2px; }
+.mermaid-viewer-diagram { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
+.mermaid-viewer-diagram > svg { display: block; width: 100% !important; height: 100% !important; max-width: none !important; }
 .rich-content .content-chart { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .rich-content .content-chart.vega-embed { padding: 0; }
 .rich-content .content-chart svg { max-width: 100%; height: auto; }
